@@ -1,0 +1,23 @@
+[
+  {
+    "id": "kaa-manifest",
+    "name": "KickAss",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/fwsiddharth/MeMo-Extensions/main/kickass.js",
+    "description": "High quality streams from KickAss"
+  },
+  {
+    "id": "kaido",
+    "name": "Kaido",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/fwsiddharth/MeMo-Extensions/main/gojowtf.js",
+    "description": "Streams from Kaido/Gojo"
+  },
+  {
+    "id": "animesalt",
+    "name": "AnimeSalt",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/fwsiddharth/MeMo-Extensions/main/animesalt.js",
+    "description": "Streams from AnimeSalt"
+  }
+]
