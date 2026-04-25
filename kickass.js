@@ -201,9 +201,14 @@ async function resolveShow(anime) {
 function parseEpisodeId(episodeId) {
   const raw = String(episodeId || "");
   const split = raw.split("|");
+  // Support both old 3-field format and new 4-field format with language
+  if (split.length === 4) {
+    const [showSlug, episodeString, epSlug, language] = split;
+    return { showSlug, episodeString, epSlug, language };
+  }
   if (split.length === 3) {
     const [showSlug, episodeString, epSlug] = split;
-    return { showSlug, episodeString, epSlug };
+    return { showSlug, episodeString, epSlug, language: "ja-JP" };
   }
   return null;
 }
@@ -294,32 +299,47 @@ module.exports = {
     }));
   },
 
-  async getEpisodes(anime) {
+  async getEpisodes(anime, options = {}) {
     const show = await resolveShow(anime);
 
+    // Fetch available languages from the API
     let languages = [];
     try {
       const langJson = await kaaFetchJson(`${BASE_URL}/api/show/${show.slug}/language`);
       languages = langJson?.result || [];
     } catch {
-      languages = ["ja-JP"];
+      // Fallback: use locales from search result if language endpoint unavailable
+      languages = Array.isArray(show.locales) ? show.locales : ["ja-JP"];
     }
 
-    let language = "ja-JP";
-    if (languages.includes("ja-JP")) language = "ja-JP";
-    else if (languages.includes("zh-CN")) language = "zh-CN";
-    else if (languages.length > 0) language = languages[0];
+    const hasDub = languages.includes("en-US");
+    const hasSub = languages.includes("ja-JP") || languages.some(l => l.startsWith("ja"));
 
-    const episodes = await getAllEpisodes(show.slug, language);
+    // Build translation options based on what's available
+    const translationOptions = [];
+    if (hasSub) translationOptions.push("sub");
+    if (hasDub) translationOptions.push("dub");
+    if (translationOptions.length === 0) translationOptions.push("sub");
+
+    // Pick the language code based on user preference
+    const requestedType = String(options?.translationType || "").trim().toLowerCase();
+    const wantDub = requestedType === "dub" && hasDub;
+    const audioLang = wantDub ? "en-US" : (hasSub ? "ja-JP" : (languages[0] || "ja-JP"));
+    const activeTranslation = wantDub ? "dub" : "sub";
+
+    const episodes = await getAllEpisodes(show.slug, audioLang);
     return {
-      translationOptions: ["sub"],
-      activeTranslation: "sub",
+      translationOptions,
+      activeTranslation,
       episodes: episodes.map((ep) => {
         const episodeString = String(ep.episode_string || ep.episode_number);
         return {
-          id: `${show.slug}|${episodeString}|${ep.slug}`,
+          // Include language in the ID so getStream knows which audio to play
+          id: `${show.slug}|${episodeString}|${ep.slug}|${audioLang}`,
           number: ep.episode_number,
-          title: ep.title || `Episode ${episodeString}`,
+          title: ep.title
+            ? (wantDub ? `${ep.title} (DUB)` : ep.title)
+            : `Episode ${episodeString}${wantDub ? " (DUB)" : ""}`,
         };
       }),
     };
