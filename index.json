@@ -19,5 +19,12 @@
     "version": "1.0.0",
     "url": "https://raw.githubusercontent.com/fwsiddharth/MeMo-Extensions/main/animesalt.js",
     "description": "Streams from AnimeSalt"
+  },
+  {
+    "id": "allanime",
+    "name": "AllAnime",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/fwsiddharth/MeMo-Extensions/main/allanime.js",
+    "description": "Vast library of anime from AllAnime"
   }
 ]
