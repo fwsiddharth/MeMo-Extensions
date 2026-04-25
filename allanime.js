@@ -17,6 +17,53 @@ function buildHeaders() {
   };
 }
 
+async function decryptAesGcm(encoded) {
+  const isNode = typeof window === 'undefined';
+  const keyString = "Xot36i3lK3:v1";
+  
+  let atobFn = isNode ? (str) => Buffer.from(str, 'base64').toString('binary') : atob;
+  
+  const binaryString = atobFn(encoded);
+  const data = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    data[i] = binaryString.charCodeAt(i);
+  }
+  
+  const iv = data.slice(1, 13);
+  const ciphertext = data.slice(13);
+  
+  if (isNode) {
+    const crypto = require('crypto');
+    const keyHash = crypto.createHash('sha256').update(keyString).digest();
+    const authTag = ciphertext.slice(-16);
+    const actualCiphertext = ciphertext.slice(0, -16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyHash, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(actualCiphertext);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return decrypted.toString('utf8');
+  } else {
+    // Web Crypto API for React Native WebView
+    const encoder = new TextEncoder();
+    const keyMaterial = encoder.encode(keyString);
+    const keyHash = await window.crypto.subtle.digest("SHA-256", keyMaterial);
+    const cryptoKey = await window.crypto.subtle.importKey(
+      "raw",
+      keyHash,
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"]
+    );
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv },
+      cryptoKey,
+      ciphertext
+    );
+    const decoder = new TextDecoder("utf-8");
+    return decoder.decode(decrypted);
+  }
+}
+
 async function gqlRequest(query, variables = {}) {
   try {
     const response = await fetch(API_URL, {
@@ -27,7 +74,14 @@ async function gqlRequest(query, variables = {}) {
     
     const json = await response.json();
     if (json.errors) throw new Error(json.errors[0]?.message || "GraphQL Error");
-    return json.data;
+    
+    let data = json.data;
+    if (data && data.tobeparsed) {
+      const decryptedString = await decryptAesGcm(data.tobeparsed);
+      data = JSON.parse(decryptedString);
+    }
+    
+    return data;
   } catch (err) {
     console.error("AllAnime Request Failed:", err.message);
     throw err;
@@ -129,7 +183,7 @@ module.exports = {
 
     let streamUrl = bestSource.sourceUrl;
     if (streamUrl.startsWith("--")) {
-        streamUrl = streamUrl.substring(2).match(/.{1,2}/g).map(hex => String.fromCharCode(parseInt(hex, 16))).join("");
+        streamUrl = streamUrl.substring(2).match(/.{1,2}/g).map(hex => String.fromCharCode(parseInt(hex, 16) ^ 56)).join("");
     }
 
     if (streamUrl.startsWith("/clock?")) {
