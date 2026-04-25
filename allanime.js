@@ -285,6 +285,9 @@ module.exports = {
         streamUrl = `https://allmanga.to${streamUrl}`;
     }
 
+    // Clean up any accidental double slashes in the path (e.g. //media3 -> /media3)
+    streamUrl = streamUrl.replace(/([^:]\/)\/+/g, "$1");
+
     // "player" type from AllAnime usually means it's a direct HLS/MP4 stream
     // "iframe" means it's an embed
     const isNativeStream = bestSource.type === "player" || !streamUrl.includes("embed");
