@@ -3,7 +3,7 @@ const API_URL = "https://api.allanime.day/api";
 
 // Minified queries to avoid parsing issues in some environments
 const SEARCH_QUERY = `query($search:SearchInput,$limit:Int,$page:Int,$translationType:VaildTranslationTypeEnumType,$countryOrigin:VaildCountryOriginEnumType){shows(search:$search,limit:$limit,page:$page,translationType:$translationType,countryOrigin:$countryOrigin){edges{_id,name,thumbnail,englishName}}}`;
-const DETAILS_QUERY = `query($_id:String!){show(_id:$_id){_id,name,englishName,nativeName,thumbnail,description,genres,status,availableLanguages}}`;
+const DETAILS_QUERY = `query($_id:String!){show(_id:$_id){_id,name,englishName,nativeName,thumbnail,description,genres,status}}`;
 const EPISODES_QUERY = `query($showId:String!){show(_id:$showId){availableEpisodesDetail}}`;
 const STREAM_QUERY = `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){sourceUrls}}`;
 
@@ -89,12 +89,15 @@ module.exports = {
     const details = await gqlRequest(DETAILS_QUERY, { _id: showId });
     const epData = await gqlRequest(EPISODES_QUERY, { showId });
     
-    const show = details?.show || {};
+    const epDetails = epData?.show?.availableEpisodesDetail || {};
     const translationType = options.translationType || "sub";
-    const availableEps = epData?.show?.availableEpisodesDetail?.[translationType] || [];
+    const availableEps = epDetails[translationType] || [];
+    
+    // Dynamically get available languages from the keys (sub, dub, raw, etc.)
+    const translationOptions = Object.keys(epDetails).filter(k => Array.isArray(epDetails[k]) && epDetails[k].length > 0);
     
     return {
-      translationOptions: show.availableLanguages || ["sub", "dub"],
+      translationOptions: translationOptions.length > 0 ? translationOptions : ["sub"],
       activeTranslation: translationType,
       episodes: availableEps.sort((a, b) => parseFloat(b) - parseFloat(a)).map(ep => ({
         id: `allanime|${showId}|${ep}|${translationType}`,
