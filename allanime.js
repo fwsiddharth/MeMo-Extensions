@@ -99,28 +99,58 @@ async function decryptAesGcm(encoded) {
   }
 }
 
-async function gqlRequest(query, variables = {}) {
-  try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: buildHeaders(),
-      body: JSON.stringify({ query, variables })
-    });
-    
-    const json = await response.json();
-    if (json.errors) throw new Error(json.errors[0]?.message || "GraphQL Error");
-    
-    let data = json.data;
-    if (data && data.tobeparsed) {
-      const decryptedString = await decryptAesGcm(data.tobeparsed);
-      data = JSON.parse(decryptedString);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function gqlRequest(query, variables = {}, retries = 2) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: buildHeaders(),
+        body: JSON.stringify({ query, variables }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (attempt < retries) {
+          await sleep(500 * (attempt + 1));
+          continue;
+        }
+        throw new Error(`AllAnime HTTP ${response.status}`);
+      }
+      
+      const json = await response.json();
+      if (json.errors) throw new Error(json.errors[0]?.message || "GraphQL Error");
+      
+      let data = json.data;
+      if (data && data.tobeparsed) {
+        const decryptedString = await decryptAesGcm(data.tobeparsed);
+        data = JSON.parse(decryptedString);
+      }
+      
+      return data;
+    } catch (err) {
+      lastError = err;
+      if (err.name === 'AbortError' || err.message.includes('timeout')) {
+        console.log(`AllAnime Request Timeout (attempt ${attempt + 1})`);
+      } else {
+        console.error("AllAnime Request Failed:", err.message);
+      }
+      if (attempt < retries) {
+        await sleep(500 * (attempt + 1));
+        continue;
+      }
     }
-    
-    return data;
-  } catch (err) {
-    console.error("AllAnime Request Failed:", err.message);
-    throw err;
   }
+  throw lastError || new Error("AllAnime Request Failed after retries");
 }
 
 function titleToSlug(title) {
@@ -234,8 +264,17 @@ module.exports = {
     console.log("allanime: stream sources count:", sources.length);
     if (!sources.length) throw new Error("No stream sources found for AllAnime.");
 
-    const preferred = ["Limax", "Gogoanime", "Vidstreaming", "Mp4Upload"];
-    const bestSource = sources.find(s => preferred.includes(s.sourceName)) || sources[0];
+    const preferred = ["Yt-mp4", "Luf-mp4", "Default", "Limax", "Gogoanime", "Vidstreaming", "Mp4Upload"];
+    
+    // Sort sources by preferred list
+    const bestSource = sources.sort((a, b) => {
+      const indexA = preferred.indexOf(a.sourceName);
+      const indexB = preferred.indexOf(b.sourceName);
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    })[0] || sources[0];
 
     let streamUrl = bestSource.sourceUrl;
     if (streamUrl.startsWith("--")) {
@@ -246,13 +285,17 @@ module.exports = {
         streamUrl = `https://allmanga.to${streamUrl}`;
     }
 
+    // "player" type from AllAnime usually means it's a direct HLS/MP4 stream
+    // "iframe" means it's an embed
+    const isNativeStream = bestSource.type === "player" || !streamUrl.includes("embed");
+
     return {
-      type: "embed",
+      type: isNativeStream ? (streamUrl.includes(".m3u8") ? "hls" : "mp4") : "embed",
       url: streamUrl,
       embedOrigin: "https://allmanga.to",
       headers: {
         "Referer": "https://allmanga.to/",
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
       }
     };
   }
