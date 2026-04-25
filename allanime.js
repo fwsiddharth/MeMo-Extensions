@@ -1,10 +1,10 @@
 const BASE_URL = "https://allmanga.to";
 const API_URL = "https://api.allanime.day/api";
 
-// Minified queries to avoid parsing issues in some environments
+// Queries aligned with Tachiyomi AllAnime extension
 const SEARCH_QUERY = `query($search:SearchInput,$limit:Int,$page:Int,$translationType:VaildTranslationTypeEnumType,$countryOrigin:VaildCountryOriginEnumType){shows(search:$search,limit:$limit,page:$page,translationType:$translationType,countryOrigin:$countryOrigin){edges{_id,name,thumbnail,englishName}}}`;
-const DETAILS_QUERY = `query($_id:String!){show(_id:$_id){_id,name,englishName,nativeName,thumbnail,description,genres,status}}`;
-const EPISODES_QUERY = `query($showId:String!){show(_id:$showId){availableEpisodesDetail}}`;
+const DETAILS_QUERY = `query($_id:String!){show(_id:$_id){_id,name,thumbnail,description,genres,status,altNames,englishName}}`;
+const EPISODES_QUERY = `query($id:String!,$start:Float!,$end:Float!){episodeInfos(showId:$id,episodeNumStart:$start,episodeNumEnd:$end){episodeIdNum,notes,uploadDates}}`;
 const STREAM_QUERY = `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){sourceUrls}}`;
 
 function buildHeaders() {
@@ -32,6 +32,10 @@ async function gqlRequest(query, variables = {}) {
     console.error("AllAnime Request Failed:", err.message);
     throw err;
   }
+}
+
+function titleToSlug(title) {
+    return title.trim().toLowerCase().replace(/[^a-z\d]+/g, "-");
 }
 
 function mapShow(show) {
@@ -86,23 +90,24 @@ module.exports = {
 
   async getEpisodes(anime, options = {}) {
     const showId = anime.id;
-    const details = await gqlRequest(DETAILS_QUERY, { _id: showId });
-    const epData = await gqlRequest(EPISODES_QUERY, { showId });
-    
-    const epDetails = epData?.show?.availableEpisodesDetail || {};
     const translationType = options.translationType || "sub";
-    const availableEps = epDetails[translationType] || [];
     
-    // Dynamically get available languages from the keys (sub, dub, raw, etc.)
-    const translationOptions = Object.keys(epDetails).filter(k => Array.isArray(epDetails[k]) && epDetails[k].length > 0);
+    // Fetch episodes list using episodeInfos (aligned with Tachiyomi)
+    const epData = await gqlRequest(EPISODES_QUERY, { 
+        id: showId,
+        start: 0,
+        end: 9999
+    });
+    
+    const episodes = epData?.episodeInfos || [];
     
     return {
-      translationOptions: translationOptions.length > 0 ? translationOptions : ["sub"],
+      translationOptions: ["sub", "dub"],
       activeTranslation: translationType,
-      episodes: availableEps.sort((a, b) => parseFloat(b) - parseFloat(a)).map(ep => ({
-        id: `allanime|${showId}|${ep}|${translationType}`,
-        number: parseFloat(ep),
-        title: `Episode ${ep}`
+      episodes: episodes.sort((a, b) => parseFloat(b.episodeIdNum) - parseFloat(a.episodeIdNum)).map(ep => ({
+        id: `allanime|${showId}|${ep.episodeIdNum}|${translationType}`,
+        number: parseFloat(ep.episodeIdNum),
+        title: ep.notes ? `Episode ${ep.episodeIdNum}: ${ep.notes}` : `Episode ${ep.episodeIdNum}`
       }))
     };
   },
@@ -119,13 +124,10 @@ module.exports = {
     const sources = data?.episode?.sourceUrls || [];
     if (!sources.length) throw new Error("No stream sources found for AllAnime.");
 
-    // Pick best source (prefer common reliable ones)
     const preferred = ["Limax", "Gogoanime", "Vidstreaming", "Mp4Upload"];
     const bestSource = sources.find(s => preferred.includes(s.sourceName)) || sources[0];
 
     let streamUrl = bestSource.sourceUrl;
-    
-    // Hex decode if necessary
     if (streamUrl.startsWith("--")) {
         streamUrl = streamUrl.substring(2).match(/.{1,2}/g).map(hex => String.fromCharCode(parseInt(hex, 16))).join("");
     }
@@ -145,4 +147,3 @@ module.exports = {
     };
   }
 };
-
