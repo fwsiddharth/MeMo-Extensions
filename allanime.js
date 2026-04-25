@@ -178,10 +178,26 @@ module.exports = {
   },
 
   async getEpisodes(anime, options = {}) {
-    const showId = anime.id;
+    console.log("allanime.getEpisodes called for anime:", JSON.stringify(anime));
+    let showId = anime.id;
+    
+    // If the ID is an AniList/Kitsu ID (numeric), we need to search for it first
+    if (!isNaN(showId) || String(showId).length < 8) {
+      const title = anime.title?.english || anime.title?.romaji || anime.title;
+      console.log(`allanime: Resolving Anilist ID ${showId} via search query: "${title}"`);
+      const searchResults = await this.search(title);
+      if (searchResults && searchResults.length > 0) {
+        showId = searchResults[0].id;
+        console.log(`allanime: Mapped AniList ${anime.id} to AllAnime ID ${showId}`);
+      } else {
+        throw new Error(`AllAnime: Could not find show matching title: ${title}`);
+      }
+    }
+    
     const translationType = options.translationType || "sub";
     
     // Fetch episodes list using episodeInfos (aligned with Tachiyomi)
+    console.log(`allanime: fetching episodes for showId=${showId}`);
     const epData = await gqlRequest(EPISODES_QUERY, { 
         id: showId,
         start: 0,
@@ -189,6 +205,7 @@ module.exports = {
     });
     
     const episodes = epData?.episodeInfos || [];
+    console.log("allanime: found episodes count:", episodes.length);
     
     return {
       translationOptions: ["sub", "dub"],
@@ -202,15 +219,19 @@ module.exports = {
   },
 
   async getStream(_anime, episodeId) {
+    console.log("allanime.getStream called for episodeId:", episodeId);
     const [_, showId, epNum, lang] = episodeId.split("|");
     
+    console.log(`allanime: fetching stream for showId=${showId}, epNum=${epNum}, lang=${lang}`);
     const data = await gqlRequest(STREAM_QUERY, {
       showId: showId,
       translationType: lang,
       episodeString: epNum
     });
 
+    console.log("allanime: stream data received:", JSON.stringify(data));
     const sources = data?.episode?.sourceUrls || [];
+    console.log("allanime: stream sources count:", sources.length);
     if (!sources.length) throw new Error("No stream sources found for AllAnime.");
 
     const preferred = ["Limax", "Gogoanime", "Vidstreaming", "Mp4Upload"];
