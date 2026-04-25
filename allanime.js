@@ -44,23 +44,58 @@ async function decryptAesGcm(encoded) {
     return decrypted.toString('utf8');
   } else {
     // Web Crypto API for React Native WebView
-    const encoder = new TextEncoder();
-    const keyMaterial = encoder.encode(keyString);
-    const keyHash = await window.crypto.subtle.digest("SHA-256", keyMaterial);
-    const cryptoKey = await window.crypto.subtle.importKey(
-      "raw",
-      keyHash,
-      { name: "AES-GCM" },
-      false,
-      ["decrypt"]
-    );
-    const decrypted = await window.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv },
-      cryptoKey,
-      ciphertext
-    );
-    const decoder = new TextDecoder("utf-8");
-    return decoder.decode(decrypted);
+    if (!window.crypto || !window.crypto.subtle) {
+      if (window.forge) {
+        const forgeStr = atob(encoded);
+        const forgeIv = forgeStr.substring(1, 13);
+        const forgeCiphertext = forgeStr.substring(13, forgeStr.length - 16);
+        const forgeTag = forgeStr.substring(forgeStr.length - 16);
+        
+        const md = window.forge.md.sha256.create();
+        md.update(keyString);
+        const forgeKeyBytes = md.digest().getBytes();
+        
+        const decipher = window.forge.cipher.createDecipher('AES-GCM', forgeKeyBytes);
+        decipher.start({
+          iv: forgeIv,
+          tag: window.forge.util.createBuffer(forgeTag)
+        });
+        decipher.update(window.forge.util.createBuffer(forgeCiphertext));
+        const pass = decipher.finish();
+        
+        if (pass) {
+          return decipher.output.toString('utf8');
+        } else {
+          throw new Error('Forge Decryption failed');
+        }
+      }
+      
+      console.log("CRITICAL: window.crypto.subtle and window.forge are NOT available!");
+      throw new Error("Web Crypto API is not available.");
+    }
+    
+    try {
+      const encoder = new TextEncoder();
+      const keyMaterial = encoder.encode(keyString);
+      const keyHash = await window.crypto.subtle.digest("SHA-256", keyMaterial);
+      const cryptoKey = await window.crypto.subtle.importKey(
+        "raw",
+        keyHash,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"]
+      );
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        cryptoKey,
+        ciphertext
+      );
+      const decoder = new TextDecoder("utf-8");
+      return decoder.decode(decrypted);
+    } catch (e) {
+      console.log("CRITICAL: Web Crypto Decryption Failed:", e.message, e.name);
+      throw e;
+    }
   }
 }
 
