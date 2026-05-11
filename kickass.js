@@ -172,7 +172,11 @@ async function resolveShow(anime) {
         bySlug.set(item.slug, item);
       }
     } catch (error) {
-      errors.push(error?.message || String(error));
+      const msg = error?.message || String(error);
+      if (msg.includes('CF_BYPASS_REQUIRED')) {
+        throw error; // Instantly abort loop on Cloudflare block
+      }
+      errors.push(msg);
     }
   }
 
