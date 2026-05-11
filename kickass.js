@@ -1,7 +1,7 @@
 const BASE_URL = "https://kaa.lt";
 const RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524]);
 const PREFERRED_SERVERS = ["VidStreaming", "CatStream", "Vidstream", "Cat"];
-const FETCH_TIMEOUT_MS = 15000;
+const FETCH_TIMEOUT_MS = 60000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
