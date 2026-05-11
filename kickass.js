@@ -132,6 +132,9 @@ async function kaaFetch(url, options = {}, retries = 2) {
     } catch (error) {
       clearTimeout(timeout);
       lastError = error;
+      if (error && String(error).includes('CF_BYPASS_REQUIRED')) {
+        throw error; // Never retry on Cloudflare block
+      }
       if (attempt < retries) {
         await sleep(500 * (attempt + 1));
         continue;
