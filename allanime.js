@@ -1,5 +1,6 @@
 const BASE_URL = "https://allmanga.to";
 const API_URL = "https://api.allanime.day/api";
+const GRAPHQL_ORIGIN = "https://youtu-chan.com";
 
 // Queries aligned with Tachiyomi AllAnime extension
 const SEARCH_QUERY = `query($search:SearchInput,$limit:Int,$page:Int,$translationType:VaildTranslationTypeEnumType,$countryOrigin:VaildCountryOriginEnumType){shows(search:$search,limit:$limit,page:$page,translationType:$translationType,countryOrigin:$countryOrigin){edges{_id,name,thumbnail,englishName}}}`;
@@ -11,26 +12,25 @@ function buildHeaders() {
   return {
     "Accept": "*/*",
     "Content-Type": "application/json",
-    "Origin": BASE_URL,
-    "Referer": `${BASE_URL}/`,
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    "Origin": GRAPHQL_ORIGIN,
+    "Referer": `${GRAPHQL_ORIGIN}/`
   };
 }
 
 async function decryptAesGcm(encoded) {
   const isNode = typeof window === 'undefined';
-  const keyString = "Xot36i3lK3:v1";
-  
   let atobFn = isNode ? (str) => Buffer.from(str, 'base64').toString('binary') : atob;
-  
+  // Read version byte from payload to construct dynamic key
   const binaryString = atobFn(encoded);
   const data = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
     data[i] = binaryString.charCodeAt(i);
   }
   
+  const versionByte = data[0];
   const iv = data.slice(1, 13);
   const ciphertext = data.slice(13);
+  const keyString = `Xot36i3lK3:v${versionByte}`;
   
   if (isNode) {
     const crypto = require('crypto');
@@ -277,8 +277,32 @@ module.exports = {
     })[0] || sources[0];
 
     let streamUrl = bestSource.sourceUrl;
-    if (streamUrl.startsWith("--")) {
-        streamUrl = streamUrl.substring(2).match(/.{1,2}/g).map(hex => String.fromCharCode(parseInt(hex, 16) ^ 56)).join("");
+
+    // XOR decryption for source URLs (aligned with Aniyomi anime extension)
+    // Each prefix type maps to a different XOR key
+    const XOR_KEYS = ["allanimenews", "1234567890123456789", "1234567890123456789012345", "s5feqxw21", "feqx1"];
+    const XOR_MASKS = XOR_KEYS.map(key => key.split('').reduce((mask, ch) => mask ^ ch.charCodeAt(0), 0));
+
+    let hexPayload = null;
+    let keyType = null;
+    if (streamUrl.startsWith("--")) { hexPayload = streamUrl.substring(2); keyType = 3; }
+    else if (streamUrl.startsWith("#-")) { hexPayload = streamUrl.substring(2); keyType = 2; }
+    else if (streamUrl.startsWith("##")) { hexPayload = streamUrl.substring(2); keyType = 1; }
+    else if (streamUrl.startsWith("-#")) { hexPayload = streamUrl.substring(2); keyType = 4; }
+    else if (streamUrl.startsWith("#")) { hexPayload = streamUrl.substring(1); keyType = 0; }
+
+    if (hexPayload) {
+      const chunks = hexPayload.match(/.{1,2}/g) || [];
+      const parsedChunks = chunks.map(h => parseInt(h, 16));
+      if (keyType !== null) {
+        streamUrl = parsedChunks.map(c => String.fromCharCode((c ^ XOR_MASKS[keyType]) & 0xFF)).join("");
+      } else {
+        // Try all masks, pick first that produces a valid URL
+        for (const mask of XOR_MASKS) {
+          const attempt = parsedChunks.map(c => String.fromCharCode((c ^ mask) & 0xFF)).join("");
+          if (attempt.includes("/clock") || attempt.includes("http")) { streamUrl = attempt; break; }
+        }
+      }
     }
 
     if (streamUrl.startsWith("/clock?")) {
