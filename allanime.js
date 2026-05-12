@@ -1,6 +1,6 @@
 const BASE_URL = "https://allmanga.to";
 const API_URL = "https://api.allanime.day/api";
-const GRAPHQL_ORIGIN = "https://youtu-chan.com";
+const GRAPHQL_ORIGIN = "https://allmanga.to";
 
 // Queries aligned with Tachiyomi AllAnime extension
 const SEARCH_QUERY = `query($search:SearchInput,$limit:Int,$page:Int,$translationType:VaildTranslationTypeEnumType,$countryOrigin:VaildCountryOriginEnumType){shows(search:$search,limit:$limit,page:$page,translationType:$translationType,countryOrigin:$countryOrigin){edges{_id,name,thumbnail,englishName}}}`;
