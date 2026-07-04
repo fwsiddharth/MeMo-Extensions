@@ -166,13 +166,19 @@ async function resolveShow(anime) {
   for (const name of names) {
     if (name.length < 2) continue;
     try {
-      const q = name.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
-      if (q.length < 2) continue;
-
-      const results = await searchKaa(q);
-      for (const item of results) {
+      const resultsExact = await searchKaa(name);
+      for (const item of resultsExact) {
         if (!item?.slug || bySlug.has(item.slug)) continue;
         bySlug.set(item.slug, item);
+      }
+
+      const q = name.replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      if (q.length >= 2 && q !== name) {
+        const results = await searchKaa(q);
+        for (const item of results) {
+          if (!item?.slug || bySlug.has(item.slug)) continue;
+          bySlug.set(item.slug, item);
+        }
       }
     } catch (error) {
       const msg = error?.message || String(error);
