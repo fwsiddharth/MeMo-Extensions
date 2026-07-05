@@ -17,15 +17,16 @@ async function tmdbFetch(path, params = {}) {
 function mapTmdbToAnime(item) {
   return {
     id: String(item.id),
-    title: item.title || item.original_title,
-    titleEnglish: item.title,
-    titleRomaji: item.original_title,
+    title: item.title || item.original_title || item.name || item.original_name,
+    titleEnglish: item.title || item.name,
+    titleRomaji: item.original_title || item.original_name,
     description: item.overview || "",
     provider: "flixhub",
-    seasonYear: item.release_date ? parseInt(item.release_date.split("-")[0]) : null,
+    seasonYear: (item.release_date || item.first_air_date) ? parseInt((item.release_date || item.first_air_date).split("-")[0]) : null,
     poster: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null,
     coverImage: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null,
-    format: "MOVIE"
+    rating: item.vote_average ? item.vote_average.toFixed(1) : "0.0",
+    format: item.media_type === "tv" || item.first_air_date ? "TV" : "MOVIE"
   };
 }
 
@@ -33,31 +34,71 @@ module.exports = {
   name: "flixhub",
 
   async search(query, options = {}) {
-    const data = await tmdbFetch("/search/movie", { query, include_adult: false, page: options.page || 1 });
-    return (data.results || []).map(mapTmdbToAnime);
+    const data = await tmdbFetch("/search/multi", { query, include_adult: false, page: options.page || 1 });
+    return (data.results || []).filter(i => i.media_type !== "person").map(mapTmdbToAnime);
   },
 
   async browse(options = {}) {
     let path = "/movie/popular";
-    const params = { page: options.page || 1 };
+    const params = { page: options.page || 1, watch_region: "IN" };
 
-    if (options.platform === "trending") path = "/trending/movie/day";
-    else if (options.platform === "top_rated") path = "/movie/top_rated";
-    else if (options.platform === "bollywood") {
-      path = "/discover/movie";
-      params.with_original_language = "hi";
-    } else if (options.platform === "action") {
-      path = "/discover/movie";
-      params.with_genres = "28";
-    } else if (options.platform === "netflix") {
-      path = "/discover/movie";
-      params.with_networks = "213";
-    } else if (options.platform === "prime") {
-      path = "/discover/movie";
-      params.with_networks = "119";
-    } else if (options.platform === "disney") {
-      path = "/discover/movie";
-      params.with_networks = "337";
+    switch (options.platform) {
+      case "latest":
+        path = "/movie/now_playing";
+        break;
+      case "trending_now":
+        path = "/trending/all/day";
+        break;
+      case "new_indian":
+        path = "/discover/movie";
+        params.with_original_language = "hi";
+        params.region = "IN";
+        params.sort_by = "primary_release_date.desc";
+        params["primary_release_date.lte"] = new Date().toISOString().split("T")[0];
+        break;
+      case "bollywood_ott":
+        path = "/discover/movie";
+        params.with_original_language = "hi";
+        params.with_watch_providers = "8|119|122"; // Netflix, Prime, Hotstar
+        params.sort_by = "primary_release_date.desc";
+        params["primary_release_date.lte"] = new Date().toISOString().split("T")[0];
+        break;
+      case "imdb_top10":
+        path = "/trending/movie/week";
+        break;
+      case "fan_favorites":
+        path = "/movie/top_rated";
+        break;
+      case "top_tv_movies":
+        path = "/trending/all/week";
+        break;
+      case "popular":
+        path = "/movie/popular";
+        break;
+      case "kdramas":
+        path = "/discover/tv";
+        params.with_original_language = "ko";
+        params.sort_by = "popularity.desc";
+        break;
+      case "upcoming":
+        path = "/movie/upcoming";
+        break;
+      // PLATFORMS
+      case "netflix":
+        path = "/discover/movie";
+        params.with_watch_providers = "8";
+        params.sort_by = "popularity.desc";
+        break;
+      case "prime":
+        path = "/discover/movie";
+        params.with_watch_providers = "119";
+        params.sort_by = "popularity.desc";
+        break;
+      case "jiohotstar":
+        path = "/discover/movie";
+        params.with_watch_providers = "122";
+        params.sort_by = "popularity.desc";
+        break;
     }
 
     const data = await tmdbFetch(path, params);
@@ -68,17 +109,23 @@ module.exports = {
     const fetchSection = async (title, platform) => {
       try {
         const items = await this.browse({ platform, page: 1 });
-        return { title, platform, items: items.slice(0, 15) }; // Show top 15 in row
+        return { title, platform, items: items.slice(0, 15) };
       } catch (e) {
         return null;
       }
     };
 
     const sections = (await Promise.all([
-      fetchSection("🔥 Trending Movies Today", "trending"),
-      fetchSection("🍿 Popular Bollywood", "bollywood"),
-      fetchSection("⭐ Top Rated Movies", "top_rated"),
-      fetchSection("💥 Action Packed", "action")
+      fetchSection("Latest Release", "latest"),
+      fetchSection("Trending Now", "trending_now"),
+      fetchSection("New Indian Movies", "new_indian"),
+      fetchSection("Bollywood OTT Releases", "bollywood_ott"),
+      fetchSection("Top 10 on IMDb this week", "imdb_top10"),
+      fetchSection("Fan favorites", "fan_favorites"),
+      fetchSection("This week's top TV and movies", "top_tv_movies"),
+      fetchSection("Popular Movies", "popular"),
+      fetchSection("Popular K-Dramas", "kdramas"),
+      fetchSection("Top Upcoming", "upcoming")
     ])).filter(Boolean);
 
     return {
@@ -86,7 +133,7 @@ module.exports = {
         platforms: [
           { value: 'netflix', label: 'Netflix' },
           { value: 'prime', label: 'Prime Video' },
-          { value: 'disney', label: 'Disney+' }
+          { value: 'jiohotstar', label: 'JioHotstar' }
         ]
       },
       sections
@@ -96,7 +143,7 @@ module.exports = {
   async getEpisodes(anime, options = {}) {
     return {
       translationOptions: ["sub", "dub"],
-      activeTranslation: "dub", // Default to dub for Hindi
+      activeTranslation: "dub",
       episodes: [
         {
           id: String(anime.id || anime.tmdbId),
