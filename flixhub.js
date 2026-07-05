@@ -1,5 +1,5 @@
 const TMDB_API_KEY = "3b0fa3c43dea59ff255ee83f04849655";
-const TMDB_BASE = "https://api.themoviedb.org/3";
+const TMDB_BASE = "https://api.tmdb.org/3";
 
 async function tmdbFetch(path, params = {}) {
   const url = new URL(`${TMDB_BASE}${path}`);
