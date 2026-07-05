@@ -14,26 +14,71 @@ async function tmdbFetch(path, params = {}) {
   return res.json();
 }
 
+function mapTmdbToAnime(item) {
+  return {
+    id: String(item.id),
+    title: item.title || item.original_title,
+    titleEnglish: item.title,
+    titleRomaji: item.original_title,
+    description: item.overview || "",
+    provider: "flixhub",
+    seasonYear: item.release_date ? parseInt(item.release_date.split("-")[0]) : null,
+    poster: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null,
+    coverImage: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null,
+    format: "MOVIE"
+  };
+}
+
 module.exports = {
   name: "flixhub",
 
-  async search(query) {
-    // Only focus on movies as requested
-    const data = await tmdbFetch("/search/movie", { query, include_adult: false });
-    return (data.results || []).map((item) => ({
-      id: String(item.id),
-      title: item.title || item.original_title,
-      titleEnglish: item.title,
-      titleRomaji: item.original_title,
-      provider: "flixhub",
-      seasonYear: item.release_date ? parseInt(item.release_date.split("-")[0]) : null,
-      poster: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null,
-      format: "MOVIE"
-    }));
+  async search(query, options = {}) {
+    const data = await tmdbFetch("/search/movie", { query, include_adult: false, page: options.page || 1 });
+    return (data.results || []).map(mapTmdbToAnime);
+  },
+
+  async browse(options = {}) {
+    let path = "/movie/popular";
+    const params = { page: options.page || 1 };
+
+    if (options.platform === "trending") path = "/trending/movie/day";
+    else if (options.platform === "top_rated") path = "/movie/top_rated";
+    else if (options.platform === "bollywood") {
+      path = "/discover/movie";
+      params.with_original_language = "hi";
+    } else if (options.platform === "action") {
+      path = "/discover/movie";
+      params.with_genres = "28";
+    }
+
+    const data = await tmdbFetch(path, params);
+    return (data.results || []).map(mapTmdbToAnime);
+  },
+
+  async getDiscover() {
+    const fetchSection = async (title, platform) => {
+      try {
+        const items = await this.browse({ platform, page: 1 });
+        return { title, platform, items: items.slice(0, 15) }; // Show top 15 in row
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const sections = (await Promise.all([
+      fetchSection("🔥 Trending Movies Today", "trending"),
+      fetchSection("🍿 Popular Bollywood", "bollywood"),
+      fetchSection("⭐ Top Rated Movies", "top_rated"),
+      fetchSection("💥 Action Packed", "action")
+    ])).filter(Boolean);
+
+    return {
+      filters: {},
+      sections
+    };
   },
 
   async getEpisodes(anime, options = {}) {
-    // Movies only have 1 episode
     return {
       translationOptions: ["sub", "dub"],
       activeTranslation: "dub", // Default to dub for Hindi
@@ -49,89 +94,24 @@ module.exports = {
 
   async getStream(anime, episodeId) {
     const tmdbId = String(episodeId);
-    
-    // The user requested: "only focus hindi and rest server should be english okay"
-    // So we provide Hindi as the primary servers, and English as fallbacks.
-    
     const servers = [];
 
     // --- HINDI (DUB) SERVERS ---
-    
-    // FlixScape Hindi
-    servers.push({
-      type: "embed",
-      name: "FlixScape (Hindi)",
-      url: `https://flix.screenscape.me/embed?tmdb=${tmdbId}&type=movie&lan=hindi`
-    });
-
-    // Peachify Hindi
-    servers.push({
-      type: "embed",
-      name: "Peachify (Hindi)",
-      url: `https://peachify.top/embed/movie/${tmdbId}?server=iron&dub=hindi&autoPlay=true&accent=B54666`
-    });
-    
-    // Videasy Hindi
-    servers.push({
-      type: "embed",
-      name: "Videasy (Hindi)",
-      url: `https://player.videasy.net/movie/${tmdbId}?color=8B5CF6&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true&dub=true`
-    });
-    
-    // VersePlay Hindi
-    servers.push({
-      type: "embed",
-      name: "VersePlay (Hindi)",
-      url: `https://verseplay.site/movie/${tmdbId}?dub=hindi&autoPlay=true`
-    });
-
-    // Nxsha Hindi
-    servers.push({
-      type: "embed",
-      name: "Nxsha (Hindi)",
-      url: `https://nxsha.site/movie/${tmdbId}?dub=hindi&autoPlay=true`
-    });
+    servers.push({ type: "embed", name: "FlixScape (Hindi)", url: `https://flix.screenscape.me/embed?tmdb=${tmdbId}&type=movie&lan=hindi` });
+    servers.push({ type: "embed", name: "Peachify (Hindi)", url: `https://peachify.top/embed/movie/${tmdbId}?server=iron&dub=hindi&autoPlay=true&accent=B54666` });
+    servers.push({ type: "embed", name: "Videasy (Hindi)", url: `https://player.videasy.net/movie/${tmdbId}?color=8B5CF6&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true&dub=true` });
+    servers.push({ type: "embed", name: "VersePlay (Hindi)", url: `https://verseplay.site/movie/${tmdbId}?dub=hindi&autoPlay=true` });
+    servers.push({ type: "embed", name: "Nxsha (Hindi)", url: `https://nxsha.site/movie/${tmdbId}?dub=hindi&autoPlay=true` });
 
     // --- ENGLISH (SUB/DEFAULT) SERVERS ---
-
-    // FlixScape English
-    servers.push({
-      type: "embed",
-      name: "FlixScape (English)",
-      url: `https://flix.screenscape.me/embed?tmdb=${tmdbId}&type=movie`
-    });
-
-    // Peachify English
-    servers.push({
-      type: "embed",
-      name: "Peachify (English)",
-      url: `https://peachify.top/embed/movie/${tmdbId}?server=iron&autoPlay=true&accent=B54666`
-    });
-
-    // Videasy English
-    servers.push({
-      type: "embed",
-      name: "Videasy (English)",
-      url: `https://player.videasy.net/movie/${tmdbId}?color=8B5CF6&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true`
-    });
-
-    // Vidnest English
-    servers.push({
-      type: "embed",
-      name: "VIDNEST (English)",
-      url: `https://vidnest.fun/embed/movie/${tmdbId}`
-    });
-
-    // NetOut English
-    servers.push({
-      type: "embed",
-      name: "NetOut (English)",
-      url: `https://netout.site/movie/${tmdbId}?autoPlay=true`
-    });
+    servers.push({ type: "embed", name: "FlixScape (English)", url: `https://flix.screenscape.me/embed?tmdb=${tmdbId}&type=movie` });
+    servers.push({ type: "embed", name: "Peachify (English)", url: `https://peachify.top/embed/movie/${tmdbId}?server=iron&autoPlay=true&accent=B54666` });
+    servers.push({ type: "embed", name: "Videasy (English)", url: `https://player.videasy.net/movie/${tmdbId}?color=8B5CF6&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true` });
+    servers.push({ type: "embed", name: "VIDNEST (English)", url: `https://vidnest.fun/embed/movie/${tmdbId}` });
+    servers.push({ type: "embed", name: "NetOut (English)", url: `https://netout.site/movie/${tmdbId}?autoPlay=true` });
 
     return {
       servers: servers,
-      // If the app expects a single URL at the root level, we provide the best one
       type: "embed",
       url: servers[0].url
     };
