@@ -193,12 +193,28 @@ module.exports = {
       if (s.name.includes("2160") || s.name.includes("4K")) quality = "4K";
       else if (s.name.includes("1080")) quality = "1080p";
       else if (s.name.includes("720")) quality = "720p";
+      else if (s.name.includes("480")) quality = "480p";
       
-      let serverName = `HdHub ${quality} (Server ${idx+1})`;
+      let size = "Unknown Size";
+      let lang = "Unknown Audio";
+      
+      if (s.description) {
+        // e.g. "[Download] [💾 7.07 GB] Inception...mkv\nHindi\nDownload | HdHub"
+        const sizeMatch = s.description.match(/💾\s*([^\]]+)\]/);
+        if (sizeMatch) size = sizeMatch[1].trim();
+        
+        const lines = s.description.split('\n');
+        if (lines.length >= 2) {
+           lang = lines[1].trim();
+        }
+      }
       
       return {
         type: "mp4", // This tells Gear5 to use Native VideoPlayer
-        name: serverName,
+        name: s.name.split(' ')[0] || `Server ${idx+1}`, // e.g. HdHub
+        quality,
+        language: lang,
+        size,
         url: s.url,
       };
     });
