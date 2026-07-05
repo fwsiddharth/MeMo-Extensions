@@ -1,4 +1,4 @@
-export default {
+return {
   name: "Bollyflix",
   shortName: "bollyflix",
   description: "Hindi Movies & Series (Custom Scraper)",
