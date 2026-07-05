@@ -1,4 +1,4 @@
-return {
+module.exports = {
   name: "Bollyflix",
   shortName: "bollyflix",
   description: "Hindi Movies & Series (Custom Scraper)",
