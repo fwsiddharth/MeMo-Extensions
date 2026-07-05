@@ -143,8 +143,6 @@ module.exports = {
 
   async getEpisodes(anime, options = {}) {
     return {
-      translationOptions: ["sub", "dub"],
-      activeTranslation: "dub",
       episodes: [
         {
           id: String(anime.id || anime.tmdbId),
