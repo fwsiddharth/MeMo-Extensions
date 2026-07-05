@@ -49,6 +49,15 @@ module.exports = {
     } else if (options.platform === "action") {
       path = "/discover/movie";
       params.with_genres = "28";
+    } else if (options.platform === "netflix") {
+      path = "/discover/movie";
+      params.with_networks = "213";
+    } else if (options.platform === "prime") {
+      path = "/discover/movie";
+      params.with_networks = "119";
+    } else if (options.platform === "disney") {
+      path = "/discover/movie";
+      params.with_networks = "337";
     }
 
     const data = await tmdbFetch(path, params);
@@ -73,7 +82,13 @@ module.exports = {
     ])).filter(Boolean);
 
     return {
-      filters: {},
+      filters: {
+        platforms: [
+          { value: 'netflix', label: 'Netflix' },
+          { value: 'prime', label: 'Prime Video' },
+          { value: 'disney', label: 'Disney+' }
+        ]
+      },
       sections
     };
   },
