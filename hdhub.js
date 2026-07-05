@@ -188,6 +188,28 @@ module.exports = {
       throw new Error("No streams found on HdHub.");
     }
 
+    // Filter out streams that clearly belong to a different year (fixes Alpha 2026 vs 2018 mismatch)
+    const expectedYear = anime.seasonYear;
+    if (expectedYear) {
+      data.streams = data.streams.filter(s => {
+        const textToSearch = (s.name || "") + " " + (s.description || "") + " " + (s.title || "");
+        const yearMatches = textToSearch.match(/\b(19\d{2}|20\d{2})\b/g);
+        if (yearMatches && yearMatches.length > 0) {
+          // If we find a year in the torrent title (usually the first 4-digit number after the title)
+          // and it doesn't match our expected year, discard it to prevent playing the wrong movie.
+          const streamYear = parseInt(yearMatches[0]);
+          if (Math.abs(streamYear - expectedYear) > 1) { 
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    if (data.streams.length === 0) {
+      throw new Error("No matching streams found for this release year.");
+    }
+
     const servers = data.streams.map((s, idx) => {
       let quality = "Unknown";
       if (s.name.includes("2160") || s.name.includes("4K")) quality = "4K";
