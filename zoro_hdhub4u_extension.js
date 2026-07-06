@@ -1,5 +1,6 @@
 const TMDB_API_KEY = "3b0fa3c43dea59ff255ee83f04849655";
 const TMDB_BASE = "https://api.tmdb.org/3";
+
 async function tmdbFetch(path, params = {}) {
   const url = new URL(`${TMDB_BASE}${path}`);
   url.searchParams.set("api_key", TMDB_API_KEY);
@@ -12,6 +13,7 @@ async function tmdbFetch(path, params = {}) {
   if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
   return res.json();
 }
+
 function mapTmdbToAnime(item) {
   return {
     id: String(item.id),
@@ -27,12 +29,14 @@ function mapTmdbToAnime(item) {
     format: item.media_type === "tv" || item.first_air_date ? "TV" : "MOVIE"
   };
 }
+
 // ---- NUVIO HDHUB4U SCRAPER LOGIC (REGEX ONLY) ---- //
 let MAIN_URL = "https://new2.hdhub4u.cl";
 const HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Referer": `${MAIN_URL}/`,
 };
+
 function formatBytes(bytes) {
     if (!bytes || bytes === 0) return 'Unknown Size';
     const k = 1024;
@@ -40,6 +44,7 @@ function formatBytes(bytes) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
+
 function atob(value) {
     if (!value) return '';
     let input = String(value).replace(/=+$/, '');
@@ -55,11 +60,13 @@ function atob(value) {
     }
     return output;
 }
+
 function rot13(value) {
     return value.replace(/[a-zA-Z]/g, function (c) {
         return String.fromCharCode((c <= "Z" ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26);
     });
 }
+
 async function getRedirectLinks(url) {
     try {
         const response = await fetch(url, { headers: HEADERS });
@@ -77,6 +84,7 @@ async function getRedirectLinks(url) {
         return url;
     } catch(e) { return url; }
 }
+
 async function hubCloudExtractor(url) {
     try {
         let currentUrl = url;
@@ -164,6 +172,7 @@ async function hubCloudExtractor(url) {
         return links;
     } catch(e) { return []; }
 }
+
 async function loadExtractor(url) {
     try {
         if (url.includes("?id=") || url.includes("techyboy4u")) {
@@ -174,6 +183,7 @@ async function loadExtractor(url) {
         return [];
     } catch(e) { return []; }
 }
+
 async function searchHDHub(query) {
     const today = new Date().toISOString().split('T')[0];
     const searchUrl = `https://search.pingora.fyi/collections/post/documents/search?q=${encodeURIComponent(query)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1&analytics_tag=${today}`;
@@ -190,6 +200,7 @@ async function searchHDHub(query) {
         };
     });
 }
+
 async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const searchQuery = mediaType === "tv" && sNum ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
     const searchResults = await searchHDHub(searchQuery);
@@ -200,8 +211,25 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const res = await fetch(bestMatch.url, { headers: HEADERS });
     const html = await res.text();
     
+    let targetHtml = html;
+    if (mediaType === "tv" && eNum) {
+        const epRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
+        const nextEpRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
+        
+        let startIdx = html.search(epRegex);
+        if (startIdx !== -1) {
+            let remainder = html.substring(startIdx + 5);
+            let endIdx = remainder.search(nextEpRegex);
+            if (endIdx !== -1) {
+                targetHtml = html.substring(startIdx, startIdx + 5 + endIdx);
+            } else {
+                targetHtml = html.substring(startIdx);
+            }
+        }
+    }
+    
     let initialLinks = [];
-    const aTags = html.match(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi) || [];
+    const aTags = targetHtml.match(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi) || [];
     for (let aTag of aTags) {
         const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
         if (hrefMatch) {
@@ -213,6 +241,9 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
             }
         }
     }
+    
+    // Prevent timeouts by capping the number of links we fetch concurrently or sequentially
+    initialLinks = initialLinks.slice(0, 12);
     
     const streams = [];
     for (const link of initialLinks) {
@@ -237,14 +268,18 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     }
     return streams;
 }
+
 // ---- END NUVIO LOGIC ---- //
+
 module.exports = {
   name: "hdhub4u",
   type: "zoro",
+
   async search(query, options = {}) {
     const data = await tmdbFetch("/search/multi", { query, include_adult: false, page: options.page || 1 });
     return (data.results || []).filter(i => i.media_type !== "person").map(mapTmdbToAnime);
   },
+
   async browse(options = {}) {
     let path = "/movie/popular";
     const params = { page: options.page || 1, watch_region: "IN" };
@@ -263,6 +298,7 @@ module.exports = {
     const data = await tmdbFetch(path, params);
     return (data.results || []).map(mapTmdbToAnime);
   },
+
   async getDiscover() {
     const fetchSection = async (title, platform) => {
       try {
@@ -277,6 +313,7 @@ module.exports = {
     ])).filter(Boolean);
     return { filters: {}, sections };
   },
+
   async getEpisodes(anime, options = {}) {
     if (anime.format === "MOVIE" || anime.type === "movie") {
       return { episodes: [{ id: String(anime.id || anime.tmdbId), number: 1, title: "Full Movie" }] };
@@ -290,6 +327,7 @@ module.exports = {
       imdbId = extData.imdb_id;
       seasonsData = tvData.seasons || [];
     } catch (e) {}
+
     const validSeasons = seasonsData.filter(s => s.season_number > 0);
     const result = { seasons: [] };
     const promises = validSeasons.map(async (s) => {
@@ -309,6 +347,7 @@ module.exports = {
     result.seasons = (await Promise.all(promises)).filter(Boolean);
     return result;
   },
+
   async getStream(anime, episodeId) {
     let streamId = String(episodeId);
     let type = "movie";
