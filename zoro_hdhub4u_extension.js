@@ -280,7 +280,7 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
         const extracted = await loadExtractor(link.url);
         for(const ext of extracted) {
             streams.push({
-                type: "mp4",
+                type: "mkv", // HDHub4u almost exclusively uploads MKVs
                 name: ext.source,
                 quality: ext.quality, // Quality string is now provided perfectly by hubCloudExtractor
                 language: "Dual Audio", // Usually dual audio on HDHub4u
