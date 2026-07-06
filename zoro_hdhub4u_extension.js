@@ -129,7 +129,7 @@ async function loadExtractor(url) {
         if (url.includes("?id=") || url.includes("techyboy4u")) {
             url = await getRedirectLinks(url);
         }
-        if (url.includes('hubcloud')) return await hubCloudExtractor(url);
+        if (url.includes('hubcloud') || url.includes('hblinks')) return await hubCloudExtractor(url);
         if (url.includes('pixeldrain')) return [{ url, quality: 1080, source: 'Pixeldrain', size: 0 }];
         return [];
     } catch(e) { return []; }
