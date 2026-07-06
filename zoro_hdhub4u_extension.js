@@ -79,15 +79,23 @@ async function getRedirectLinks(url) {
 }
 async function hubCloudExtractor(url) {
     try {
-        const currentUrl = url.replace("hubcloud.ink", "hubcloud.dad");
-        const res = await fetch(currentUrl, { headers: HEADERS });
-        let pageData = await res.text();
+        let currentUrl = url;
+        let pageData = "";
         
-        const headerMatch = pageData.match(/<div[^>]*class=["'][^"']*card-header[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
-        const headerText = headerMatch ? headerMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-        const qualityMatch = headerText.match(/(\d{3,4})[pP]/);
-        const quality = qualityMatch ? parseInt(qualityMatch[1]) : 1080;
+        // 1. If it's hblinks.co, extract the hubcloud.cx link
+        if (currentUrl.includes('hblinks')) {
+            const res = await fetch(currentUrl, { headers: HEADERS });
+            pageData = await res.text();
+            const hubMatch = pageData.match(/<a[^>]+href=["'](https?:\/\/(?:hubcloud|hubdrive|hubcdn)[^"']+)["'][^>]*>/i);
+            if (hubMatch) currentUrl = hubMatch[1];
+            else return [];
+        }
         
+        // 2. Fetch the hubcloud.cx/hubdrive link
+        const res2 = await fetch(currentUrl, { headers: HEADERS });
+        pageData = await res2.text();
+        
+        // Extract size
         const sizeMatchHtml = pageData.match(/<i[^>]*id=["']size["'][^>]*>([\s\S]*?)<\/i>/i);
         let size = sizeMatchHtml ? sizeMatchHtml[1].replace(/<[^>]+>/g, '').trim() : '';
         let sizeInBytes = 0;
@@ -100,16 +108,28 @@ async function hubCloudExtractor(url) {
             }
         }
         
+        // Check if it's the "Generate Link" page (redirects to gamerxyt.com)
+        const generateLinkMatch = pageData.match(/<a[^>]+id=["']download["'][^>]+href=["']([^"']+)["']/i) || pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]+id=["']download["']/i);
+        
+        if (generateLinkMatch) {
+            const generateUrl = generateLinkMatch[1];
+            const res3 = await fetch(generateUrl, { headers: HEADERS });
+            pageData = await res3.text();
+        }
+        
+        // Now extract the actual FSL/10Gbps/Pixeldrain links!
         const links = [];
         const aMatches = pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*btn[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
+        
         for (const aTag of aMatches) {
             const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
             const href = hrefMatch ? hrefMatch[1] : null;
             if (!href) continue;
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
-            if (text.includes("FSL Server")) links.push({ url: href, quality, source: "HubCloud - FSL", size: sizeInBytes });
-            else if (text.includes("S3 Server")) links.push({ url: href, quality, source: "HubCloud - S3", size: sizeInBytes });
+            // FSL, S3, 10Gbps, Pixeldrain matches
+            if (text.includes("FSL")) links.push({ url: href, quality: 1080, source: "HubCloud - FSL", size: sizeInBytes });
+            else if (text.includes("S3 Server")) links.push({ url: href, quality: 1080, source: "HubCloud - S3", size: sizeInBytes });
             else if (text.includes("10Gbps")) {
                 let finalLink = href;
                 try {
@@ -117,9 +137,9 @@ async function hubCloudExtractor(url) {
                     const loc = r.headers.get('location');
                     if(loc && loc.includes("link=")) finalLink = loc.substring(loc.indexOf("link=")+5);
                 } catch(e) {}
-                links.push({ url: finalLink, quality, source: "HubCloud - 10Gbps", size: sizeInBytes });
+                links.push({ url: finalLink, quality: 1080, source: "HubCloud - 10Gbps", size: sizeInBytes });
             }
-            else if (href.includes("pixeldrain")) links.push({ url: href, quality, source: "Pixeldrain", size: sizeInBytes });
+            else if (text.includes("PixelServer")) links.push({ url: href, quality: 1080, source: "Pixeldrain", size: sizeInBytes });
         }
         return links;
     } catch(e) { return []; }
