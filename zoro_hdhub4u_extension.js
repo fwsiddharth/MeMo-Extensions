@@ -155,23 +155,30 @@ async function hubCloudExtractor(url) {
             if (!href) continue;
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
-            let finalLink = href;
-            try {
-                const r = await fetch(href);
-                if (r.url && r.url.includes("link=")) {
-                    finalLink = r.url.substring(r.url.indexOf("link=") + 5);
-                } else if (r.url && r.url.includes("pixeldrain.com/u/")) {
-                    finalLink = r.url.replace("/u/", "/api/file/");
-                } else if (r.url) {
-                    finalLink = r.url;
-                }
-            } catch(e) {}
-            
-            // FSL, S3, 10Gbps, Pixeldrain matches
-            if (text.includes("FSL")) links.push({ url: finalLink, quality: 1080, source: "HubCloud - FSL", size: sizeInBytes });
-            else if (text.includes("S3 Server")) links.push({ url: finalLink, quality: 1080, source: "HubCloud - S3", size: sizeInBytes });
-            else if (text.includes("10Gbps")) links.push({ url: finalLink, quality: 1080, source: "HubCloud - 10Gbps", size: sizeInBytes });
-            else if (text.includes("PixelServer")) links.push({ url: finalLink, quality: 1080, source: "Pixeldrain", size: sizeInBytes });
+            if (text.includes("FSL")) {
+                links.push({ url: href, quality: 1080, source: "HubCloud - FSL", size: sizeInBytes });
+            }
+            else if (text.includes("S3 Server")) {
+                links.push({ url: href, quality: 1080, source: "HubCloud - S3", size: sizeInBytes });
+            }
+            else if (text.includes("10Gbps")) {
+                let finalLink = href;
+                try {
+                    const r = await fetch(href);
+                    if (r.url && r.url.includes("link=")) {
+                        finalLink = r.url.substring(r.url.indexOf("link=") + 5);
+                    } else if (r.url) {
+                        finalLink = r.url;
+                    }
+                } catch(e) {}
+                links.push({ url: finalLink, quality: 1080, source: "HubCloud - 10Gbps", size: sizeInBytes });
+            }
+            else if (text.includes("PixelServer") || text.includes("Pixeldrain")) {
+                let finalLink = href;
+                if (finalLink.includes("pixeldrain.com/u/")) finalLink = finalLink.replace("/u/", "/api/file/");
+                else if (finalLink.includes("pixeldrain.dev/u/")) finalLink = finalLink.replace("/u/", "/api/file/");
+                links.push({ url: finalLink, quality: 1080, source: "Pixeldrain", size: sizeInBytes });
+            }
         }
         return links;
     } catch(e) { return []; }
