@@ -155,11 +155,22 @@ async function hubCloudExtractor(url) {
             if (!href) continue;
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
+            // Drop samples and tiny files (under 100MB to be safe for TV episodes)
+            if (href.toLowerCase().includes('sample') || text.toLowerCase().includes('sample')) continue;
+            if (sizeInBytes > 0 && sizeInBytes < 100 * 1024 * 1024) continue;
+            
+            // Extract Quality & enforce strict resolutions
+            let qStr = "1080p";
+            if (text.match(/4k|2160p/i)) qStr = "4K";
+            else if (text.match(/1080p/i)) qStr = "1080p";
+            else if (text.match(/720p/i)) qStr = "720p";
+            else continue; // Drop 480p, 360p, or undefined qualities
+            
             if (text.includes("FSL")) {
-                links.push({ url: href, quality: 1080, source: "HubCloud - FSL", size: sizeInBytes });
+                links.push({ url: href, quality: qStr, source: "Server 2 (High Speed)", size: sizeInBytes });
             }
             else if (text.includes("S3 Server")) {
-                links.push({ url: href, quality: 1080, source: "HubCloud - S3", size: sizeInBytes });
+                links.push({ url: href, quality: qStr, source: "Server 3 (Backup)", size: sizeInBytes });
             }
             else if (text.includes("10Gbps")) {
                 let finalLink = href;
@@ -171,13 +182,13 @@ async function hubCloudExtractor(url) {
                         finalLink = r.url;
                     }
                 } catch(e) {}
-                links.push({ url: finalLink, quality: 1080, source: "HubCloud - 10Gbps", size: sizeInBytes });
+                links.push({ url: finalLink, quality: qStr, source: "Server 1 (Fastest)", size: sizeInBytes });
             }
             else if (text.includes("PixelServer") || text.includes("Pixeldrain")) {
                 let finalLink = href;
                 if (finalLink.includes("pixeldrain.com/u/")) finalLink = finalLink.replace("/u/", "/api/file/");
                 else if (finalLink.includes("pixeldrain.dev/u/")) finalLink = finalLink.replace("/u/", "/api/file/");
-                links.push({ url: finalLink, quality: 1080, source: "Pixeldrain", size: sizeInBytes });
+                links.push({ url: finalLink, quality: qStr, source: "Server 4", size: sizeInBytes });
             }
         }
         return links;
@@ -261,23 +272,45 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
         if(!link.url) continue;
         const extracted = await loadExtractor(link.url);
         for(const ext of extracted) {
-            let qStr = "1080p";
-            if (ext.quality >= 2160) qStr = "4K";
-            else if (ext.quality >= 1080) qStr = "1080p";
-            else if (ext.quality >= 720) qStr = "720p";
-            else if (ext.quality >= 480) qStr = "480p";
-            
             streams.push({
                 type: "mp4",
-                name: `HDHub4u - ${ext.source}`,
-                quality: qStr,
-                language: "Native",
+                name: ext.source,
+                quality: ext.quality, // Quality string is now provided perfectly by hubCloudExtractor
+                language: "Dual Audio", // Usually dual audio on HDHub4u
                 size: formatBytes(ext.size),
                 url: ext.url
             });
         }
     }
-    return streams;
+    
+    // Smart Deduplication: Group by quality, and keep top servers
+    const grouped = {};
+    for (const stream of streams) {
+        if (!grouped[stream.quality]) grouped[stream.quality] = [];
+        grouped[stream.quality].push(stream);
+    }
+    
+    const finalStreams = [];
+    const serverOrder = ["Server 1 (Fastest)", "Server 2 (High Speed)", "Server 3 (Backup)", "Server 4"];
+    
+    for (const [quality, streamList] of Object.entries(grouped)) {
+        // Sort streams by source name according to serverOrder priority, removing exact duplicates
+        const uniqueStreams = [];
+        const seenSources = new Set();
+        
+        // Pick best servers first
+        for (const targetSource of serverOrder) {
+            const found = streamList.find(s => s.name === targetSource);
+            if (found && !seenSources.has(targetSource)) {
+                uniqueStreams.push(found);
+                seenSources.add(targetSource);
+            }
+        }
+        
+        finalStreams.push(...uniqueStreams);
+    }
+    
+    return finalStreams;
 }
 
 // ---- END NUVIO LOGIC ---- //
