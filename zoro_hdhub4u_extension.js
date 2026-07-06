@@ -157,7 +157,7 @@ async function hubCloudExtractor(url) {
             
             let finalLink = href;
             try {
-                const r = await fetch(href, { method: 'HEAD', headers: HEADERS });
+                const r = await fetch(href);
                 if (r.url && r.url.includes("link=")) {
                     finalLink = r.url.substring(r.url.indexOf("link=") + 5);
                 } else if (r.url && r.url.includes("pixeldrain.com/u/")) {
