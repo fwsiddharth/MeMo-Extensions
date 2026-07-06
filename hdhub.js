@@ -65,16 +65,19 @@ module.exports = {
         params["primary_release_date.lte"] = new Date().toISOString().split("T")[0];
         break;
       case "imdb_top10":
-        path = "/trending/movie/week";
+        path = "/trending/all/week";
         break;
       case "fan_favorites":
-        path = "/movie/top_rated";
+        path = "/tv/top_rated";
         break;
       case "top_tv_movies":
         path = "/trending/all/week";
         break;
       case "popular":
         path = "/movie/popular";
+        break;
+      case "popular_tv":
+        path = "/tv/popular";
         break;
       case "kdramas":
         path = "/discover/tv";
@@ -84,19 +87,19 @@ module.exports = {
       case "upcoming":
         path = "/movie/upcoming";
         break;
-      // PLATFORMS
+      // PLATFORMS (Support both TV and Movie by using discover/tv for a specific one, or relying on multi search later, but for now just discover/movie)
       case "netflix":
-        path = "/discover/movie";
+        path = "/discover/tv";
         params.with_watch_providers = "8";
         params.sort_by = "popularity.desc";
         break;
       case "prime":
-        path = "/discover/movie";
+        path = "/discover/tv";
         params.with_watch_providers = "119";
         params.sort_by = "popularity.desc";
         break;
       case "jiohotstar":
-        path = "/discover/movie";
+        path = "/discover/tv";
         params.with_watch_providers = "122";
         params.sort_by = "popularity.desc";
         break;
@@ -119,11 +122,11 @@ module.exports = {
     const sections = (await Promise.all([
       fetchSection("Latest Release", "latest"),
       fetchSection("Trending Now", "trending_now"),
+      fetchSection("Popular TV Shows", "popular_tv"),
       fetchSection("New Indian Movies", "new_indian"),
       fetchSection("Bollywood OTT Releases", "bollywood_ott"),
       fetchSection("Top 10 on IMDb this week", "imdb_top10"),
-      fetchSection("Fan favorites", "fan_favorites"),
-      fetchSection("This week's top TV and movies", "top_tv_movies"),
+      fetchSection("Top Rated TV", "fan_favorites"),
       fetchSection("Popular Movies", "popular"),
       fetchSection("Popular K-Dramas", "kdramas"),
       fetchSection("Top Upcoming", "upcoming")
@@ -142,43 +145,91 @@ module.exports = {
   },
 
   async getEpisodes(anime, options = {}) {
-    return {
-      episodes: [
-        {
-          id: String(anime.id || anime.tmdbId),
-          number: 1,
-          title: "Full Movie"
-        }
-      ]
-    };
+    if (anime.format === "MOVIE" || anime.type === "movie") {
+      return {
+        episodes: [
+          {
+            id: String(anime.id || anime.tmdbId),
+            number: 1,
+            title: "Full Movie"
+          }
+        ]
+      };
+    }
+
+    // Series logic
+    const tmdbId = String(anime.id || anime.tmdbId);
+    let imdbId = null;
+    let seasonsData = [];
+    
+    try {
+      // 1. Fetch TV Details (to get number of seasons)
+      const tvData = await tmdbFetch(`/tv/${tmdbId}`);
+      // 2. Fetch external IDs
+      const extData = await tmdbFetch(`/tv/${tmdbId}/external_ids`);
+      imdbId = extData.imdb_id;
+      
+      seasonsData = tvData.seasons || [];
+    } catch (e) {
+      console.error("Failed to fetch TMDB TV details", e);
+    }
+
+    if (!imdbId) throw new Error("Could not find IMDb ID for this series.");
+    
+    const validSeasons = seasonsData.filter(s => s.season_number > 0);
+    const result = { seasons: [] };
+    
+    const promises = validSeasons.map(async (s) => {
+      try {
+        const sData = await tmdbFetch(`/tv/${tmdbId}/season/${s.season_number}`);
+        const eps = (sData.episodes || []).map(e => ({
+          id: `${imdbId}:${s.season_number}:${e.episode_number}`,
+          number: e.episode_number,
+          title: e.name || `Episode ${e.episode_number}`,
+          overview: e.overview,
+          image: e.still_path ? `https://image.tmdb.org/t/p/w300${e.still_path}` : null,
+          season: s.season_number,
+          imdbId
+        }));
+        return {
+          season: s.season_number,
+          name: s.name || `Season ${s.season_number}`,
+          episodes: eps
+        };
+      } catch(e) { return null; }
+    });
+    
+    const resolved = await Promise.all(promises);
+    result.seasons = resolved.filter(Boolean);
+    
+    return result;
   },
 
   async getStream(anime, episodeId) {
-    const tmdbId = String(episodeId);
-    let imdbId = null;
+    let streamId = String(episodeId);
+    let type = "movie";
     
-    // 1. Fetch IMDb ID from TMDB
-    try {
-      const type = (anime.format === "TV" || anime.type === "TV") ? "tv" : "movie";
-      const tmdbData = await tmdbFetch(`/${type}/${tmdbId}/external_ids`);
-      imdbId = tmdbData.imdb_id;
-    } catch (e) {
-      console.error("Failed to fetch IMDb ID", e);
+    // Check if it's a series ID (e.g., tt123:1:1)
+    if (streamId.includes(":")) {
+      type = "series";
+      // streamId is already correctly formatted as ttId:s:e
+    } else {
+      // It's a movie, need to convert TMDB to IMDB if not already tt...
+      if (!streamId.startsWith("tt")) {
+        try {
+          const tmdbData = await tmdbFetch(`/movie/${streamId}/external_ids`);
+          streamId = tmdbData.imdb_id;
+        } catch (e) {
+          console.error("Failed to fetch IMDb ID", e);
+        }
+      }
     }
 
-    if (!imdbId) throw new Error("Could not find IMDb ID for this title.");
+    if (!streamId || !streamId.startsWith("tt")) throw new Error("Could not find valid IMDb ID for this title.");
 
     // 2. Fetch Stremio Addon Streams
     const addonUrl = `https://hdhub.thevolecitor.qzz.io/eyJ0b3Jib3giOiJ1bnNldCIsInF1YWxpdGllcyI6IjIxNjBwLDEwODBwLDcyMHAiLCJzb3J0IjoiZGVzYyJ9`;
     
-    // Determine stream id (movie vs series)
-    let streamId = imdbId;
-    let type = "movie";
-    if (anime.format === "TV" || anime.type === "TV") {
-      type = "series";
-      streamId = `${imdbId}:${anime.season || 1}:${anime.episode || 1}`;
-    }
-
     const req = await fetch(`${addonUrl}/stream/${type}/${streamId}.json`);
     const data = await req.json();
 
