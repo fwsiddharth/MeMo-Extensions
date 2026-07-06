@@ -145,6 +145,10 @@ async function hubCloudExtractor(url) {
             pageData = await res3.text();
         }
         
+        // Extract Title to check resolution from filename
+        const titleMatch = pageData.match(/<title>([^<]+)<\/title>/i);
+        const pageTitle = titleMatch ? titleMatch[1] : "";
+        
         // Now extract the actual FSL/10Gbps/Pixeldrain links!
         const links = [];
         const aMatches = pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*btn[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
@@ -156,15 +160,18 @@ async function hubCloudExtractor(url) {
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
             // Drop samples and tiny files (under 100MB to be safe for TV episodes)
-            if (href.toLowerCase().includes('sample') || text.toLowerCase().includes('sample')) continue;
+            if (href.toLowerCase().includes('sample') || pageTitle.toLowerCase().includes('sample') || text.toLowerCase().includes('sample')) continue;
             if (sizeInBytes > 0 && sizeInBytes < 100 * 1024 * 1024) continue;
             
-            // Extract Quality & enforce strict resolutions
-            let qStr = "1080p";
-            if (text.match(/4k|2160p/i)) qStr = "4K";
-            else if (text.match(/1080p/i)) qStr = "1080p";
-            else if (text.match(/720p/i)) qStr = "720p";
-            else continue; // Drop 480p, 360p, or undefined qualities
+            // Extract Quality & enforce strict resolutions from the pageTitle (filename)
+            let qStr = "1080p"; // Default to 1080p if unspecified
+            const searchString = (pageTitle + " " + text).toLowerCase();
+            
+            if (searchString.match(/4k|2160p/)) qStr = "4K";
+            else if (searchString.match(/1080p/)) qStr = "1080p";
+            else if (searchString.match(/720p/)) qStr = "720p";
+            else if (searchString.match(/480p|360p/)) continue; // Drop low qualities explicitly
+            // If it doesn't mention resolution, we keep it as 1080p rather than dropping it entirely.
             
             if (text.includes("FSL")) {
                 links.push({ url: href, quality: qStr, source: "Server 2 (High Speed)", size: sizeInBytes });
