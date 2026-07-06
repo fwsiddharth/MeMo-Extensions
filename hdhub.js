@@ -290,10 +290,45 @@ module.exports = {
       };
     });
 
+    let subtitles = [];
+    try {
+      const subReq = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${type}/${streamId}.json`);
+      const subData = await subReq.json();
+      if (subData.subtitles) {
+        const allowedLangs = { 'eng': 'English', 'hin': 'Hindi', 'spa': 'Spanish', 'ara': 'Arabic' };
+        let subsRaw = subData.subtitles
+          .filter(s => allowedLangs[s.lang])
+          .map(s => ({
+            label: allowedLangs[s.lang],
+            url: s.url,
+            lang: s.lang
+          }));
+        
+        subsRaw.sort((a, b) => {
+          if (a.lang === 'eng') return -1;
+          if (b.lang === 'eng') return 1;
+          return 0;
+        });
+
+        const uniqueSubs = [];
+        const seenLangs = new Set();
+        for (let sub of subsRaw) {
+          if (!seenLangs.has(sub.lang)) {
+            seenLangs.add(sub.lang);
+            uniqueSubs.push(sub);
+          }
+        }
+        subtitles = uniqueSubs;
+      }
+    } catch (e) {
+      console.error("Failed to fetch subtitles from OpenSubtitles", e);
+    }
+
     return {
       servers: servers,
       type: "mp4",
-      url: servers[0].url
+      url: servers[0].url,
+      subtitles: subtitles
     };
   }
 };
