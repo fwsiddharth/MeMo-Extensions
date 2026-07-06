@@ -84,16 +84,36 @@ async function hubCloudExtractor(url) {
         
         // 1. If it's hblinks.co, extract the hubcloud.cx link
         if (currentUrl.includes('hblinks')) {
+            console.log("Fetching hblinks:", currentUrl);
             const res = await fetch(currentUrl, { headers: HEADERS });
             pageData = await res.text();
-            const hubMatch = pageData.match(/<a[^>]+href=["'](https?:\/\/(?:hubcloud|hubdrive|hubcdn)[^"']+)["'][^>]*>/i);
-            if (hubMatch) currentUrl = hubMatch[1];
-            else return [];
+            console.log("hblinks HTML length:", pageData.length);
+            const hubcloudCxMatch = pageData.match(/href=["'](https?:\/\/hubcloud\.cx\/drive\/[^"']+)["']/i);
+            const hubMatch = hubcloudCxMatch || pageData.match(/href=["'](https?:\/\/[^"']*(?:hubcloud|hubdrive|hubcdn)[^"']*\/(?:drive|file)\/[^"']+)["']/i);
+            if (hubMatch) {
+                currentUrl = hubMatch[1];
+                console.log("Found Hubcloud Link:", currentUrl);
+            } else {
+                console.log("Failed to find hubcloud link in hblinks HTML!");
+                return [];
+            }
         }
         
         // 2. Fetch the hubcloud.cx/hubdrive link
+        console.log("Fetching hubcloud:", currentUrl);
         const res2 = await fetch(currentUrl, { headers: HEADERS });
         pageData = await res2.text();
+        
+        // 3. Follow secondary redirects if we landed on a hubdrive/hubcdn page instead of hubcloud.cx
+        if (!currentUrl.includes('hubcloud.cx') && !currentUrl.includes('gamerxyt')) {
+            const hubcloudCxMatch = pageData.match(/href=["'](https?:\/\/hubcloud\.cx\/drive\/[^"']+)["']/i);
+            if (hubcloudCxMatch) {
+                currentUrl = hubcloudCxMatch[1];
+                console.log("Redirecting to hubcloud.cx:", currentUrl);
+                const res2b = await fetch(currentUrl, { headers: HEADERS });
+                pageData = await res2b.text();
+            }
+        }
         
         // Extract size
         const sizeMatchHtml = pageData.match(/<i[^>]*id=["']size["'][^>]*>([\s\S]*?)<\/i>/i);
@@ -149,7 +169,7 @@ async function loadExtractor(url) {
         if (url.includes("?id=") || url.includes("techyboy4u")) {
             url = await getRedirectLinks(url);
         }
-        if (url.includes('hubcloud') || url.includes('hblinks')) return await hubCloudExtractor(url);
+        if (url.includes('hubcloud') || url.includes('hblinks') || url.includes('hubdrive') || url.includes('hubcdn')) return await hubCloudExtractor(url);
         if (url.includes('pixeldrain')) return [{ url, quality: 1080, source: 'Pixeldrain', size: 0 }];
         return [];
     } catch(e) { return []; }
@@ -181,18 +201,15 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const html = await res.text();
     
     let initialLinks = [];
-    const hTagsMatch = html.match(/<h[34][^>]*>[\s\S]*?<\/h[34]>/gi) || [];
-    for (let hTag of hTagsMatch) {
-        if (hTag.match(/480|720|1080|2160|4K/i)) {
-            const aTags = hTag.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
-            for (let aTag of aTags) {
-                const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
-                if (hrefMatch) {
-                    const href = hrefMatch[1];
-                    if (mediaType === "movie" || href.includes('techyboy4u')) {
-                        initialLinks.push({ url: href });
-                    }
-                }
+    const aTags = html.match(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi) || [];
+    for (let aTag of aTags) {
+        const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
+        if (hrefMatch) {
+            const href = hrefMatch[1];
+            if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
+                href.includes('hblinks') || href.includes('hubcloud') || 
+                href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
+                initialLinks.push({ url: href });
             }
         }
     }
