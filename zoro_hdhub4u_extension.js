@@ -27,9 +27,7 @@ function mapTmdbToAnime(item) {
     format: item.media_type === "tv" || item.first_air_date ? "TV" : "MOVIE"
   };
 }
-// ---- NUVIO HDHUB4U SCRAPER LOGIC INJECTED HERE ---- //
-const cheerio = require('cheerio-without-node-native');
-const CryptoJS = require('crypto-js');
+// ---- NUVIO HDHUB4U SCRAPER LOGIC (REGEX ONLY) ---- //
 let MAIN_URL = "https://new2.hdhub4u.cl";
 const HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -62,16 +60,6 @@ function rot13(value) {
         return String.fromCharCode((c <= "Z" ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26);
     });
 }
-function extractServerName(source) {
-    if (!source) return 'Unknown';
-    if (source.startsWith('HubCloud')) {
-        const serverMatch = source.match(/HubCloud(?:\s*-\s*([^[\]]+))?/);
-        return serverMatch ? (serverMatch[1] || 'Download') : 'HubCloud';
-    }
-    if (source.startsWith('Pixeldrain')) return 'Pixeldrain';
-    if (source.startsWith('HubCdn')) return 'HubCdn';
-    return source.replace(/^www\./, '').split('.')[0];
-}
 async function getRedirectLinks(url) {
     try {
         const response = await fetch(url, { headers: HEADERS });
@@ -94,40 +82,44 @@ async function hubCloudExtractor(url) {
         const currentUrl = url.replace("hubcloud.ink", "hubcloud.dad");
         const res = await fetch(currentUrl, { headers: HEADERS });
         let pageData = await res.text();
-        const $ = cheerio.load(pageData);
-        const header = $('div.card-header').text().trim();
-        const qualityMatch = header.match(/(\d{3,4})[pP]/);
+        
+        const headerMatch = pageData.match(/<div[^>]*class=["'][^"']*card-header[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+        const headerText = headerMatch ? headerMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+        const qualityMatch = headerText.match(/(\d{3,4})[pP]/);
         const quality = qualityMatch ? parseInt(qualityMatch[1]) : 1080;
         
-        let size = $('i#size').text().trim();
+        const sizeMatchHtml = pageData.match(/<i[^>]*id=["']size["'][^>]*>([\s\S]*?)<\/i>/i);
+        let size = sizeMatchHtml ? sizeMatchHtml[1].replace(/<[^>]+>/g, '').trim() : '';
         let sizeInBytes = 0;
         if(size) {
-            const sizeMatch = size.match(/([\d.]+)\s*(GB|MB|KB)/i);
-            if(sizeMatch) {
-                const val = parseFloat(sizeMatch[1]);
-                if(sizeMatch[2].toUpperCase() === 'GB') sizeInBytes = val * 1024 * 1024 * 1024;
-                if(sizeMatch[2].toUpperCase() === 'MB') sizeInBytes = val * 1024 * 1024;
+            const sMatch = size.match(/([\d.]+)\s*(GB|MB|KB)/i);
+            if(sMatch) {
+                const val = parseFloat(sMatch[1]);
+                if(sMatch[2].toUpperCase() === 'GB') sizeInBytes = val * 1024 * 1024 * 1024;
+                if(sMatch[2].toUpperCase() === 'MB') sizeInBytes = val * 1024 * 1024;
             }
         }
         
         const links = [];
-        const elements = $('div.card-body h2 a.btn').get();
-        for (const el of elements) {
-            const link = $(el).attr('href');
-            const text = $(el).text();
+        const aMatches = pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*btn[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
+        for (const aTag of aMatches) {
+            const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
+            const href = hrefMatch ? hrefMatch[1] : null;
+            if (!href) continue;
+            const text = aTag.replace(/<[^>]+>/g, '').trim();
             
-            if (text.includes("FSL Server")) links.push({ url: link, quality, source: "HubCloud - FSL", size: sizeInBytes });
-            else if (text.includes("S3 Server")) links.push({ url: link, quality, source: "HubCloud - S3", size: sizeInBytes });
+            if (text.includes("FSL Server")) links.push({ url: href, quality, source: "HubCloud - FSL", size: sizeInBytes });
+            else if (text.includes("S3 Server")) links.push({ url: href, quality, source: "HubCloud - S3", size: sizeInBytes });
             else if (text.includes("10Gbps")) {
-                let finalLink = link;
+                let finalLink = href;
                 try {
-                    const r = await fetch(link, { redirect: 'manual' });
+                    const r = await fetch(href, { redirect: 'manual' });
                     const loc = r.headers.get('location');
                     if(loc && loc.includes("link=")) finalLink = loc.substring(loc.indexOf("link=")+5);
                 } catch(e) {}
                 links.push({ url: finalLink, quality, source: "HubCloud - 10Gbps", size: sizeInBytes });
             }
-            else if (link && link.includes("pixeldrain")) links.push({ url: link, quality, source: "Pixeldrain", size: sizeInBytes });
+            else if (href.includes("pixeldrain")) links.push({ url: href, quality, source: "Pixeldrain", size: sizeInBytes });
         }
         return links;
     } catch(e) { return []; }
@@ -138,7 +130,7 @@ async function loadExtractor(url) {
             url = await getRedirectLinks(url);
         }
         if (url.includes('hubcloud')) return await hubCloudExtractor(url);
-        if (url.includes('pixeldrain')) return [{ url, quality: 1080, source: 'Pixeldrain' }];
+        if (url.includes('pixeldrain')) return [{ url, quality: 1080, source: 'Pixeldrain', size: 0 }];
         return [];
     } catch(e) { return []; }
 }
@@ -167,23 +159,22 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     let bestMatch = searchResults[0];
     const res = await fetch(bestMatch.url, { headers: HEADERS });
     const html = await res.text();
-    const $ = cheerio.load(html);
     
     let initialLinks = [];
-    if (mediaType === "movie") {
-        $('h3 a, h4 a').filter((i, el) => $(el).text().match(/480|720|1080|2160|4K/i))
-            .each((i, el) => initialLinks.push({ url: $(el).attr('href') }));
-    } else {
-        // TV Shows - Find episode specific links
-        $('h3, h4').each((i, el) => {
-            const text = $(el).text();
-            if (text.match(/480|720|1080|2160|4K/i) && $(el).find('a').length) {
-                $(el).find('a').each((_, a) => {
-                    const href = $(a).attr('href');
-                    if(href && href.includes('techyboy4u')) initialLinks.push({ url: href });
-                });
+    const hTagsMatch = html.match(/<h[34][^>]*>[\s\S]*?<\/h[34]>/gi) || [];
+    for (let hTag of hTagsMatch) {
+        if (hTag.match(/480|720|1080|2160|4K/i)) {
+            const aTags = hTag.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
+            for (let aTag of aTags) {
+                const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
+                if (hrefMatch) {
+                    const href = hrefMatch[1];
+                    if (mediaType === "movie" || href.includes('techyboy4u')) {
+                        initialLinks.push({ url: href });
+                    }
+                }
             }
-        });
+        }
     }
     
     const streams = [];
