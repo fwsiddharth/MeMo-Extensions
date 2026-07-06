@@ -161,9 +161,19 @@ async function hubCloudExtractor(url) {
             else if (text.includes("10Gbps")) {
                 let finalLink = href;
                 try {
-                    const r = await fetch(href, { redirect: 'manual' });
-                    const loc = r.headers.get('location');
-                    if(loc && loc.includes("link=")) finalLink = loc.substring(loc.indexOf("link=")+5);
+                    let tempUrl = href;
+                    for (let i = 0; i < 3; i++) {
+                        const r = await fetch(tempUrl, { redirect: 'manual' });
+                        if (r.status >= 300 && r.status < 400) {
+                            tempUrl = r.headers.get('location');
+                            if (tempUrl && tempUrl.includes("link=")) {
+                                finalLink = tempUrl.substring(tempUrl.indexOf("link=") + 5);
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
                 } catch(e) {}
                 links.push({ url: finalLink, quality: 1080, source: "HubCloud - 10Gbps", size: sizeInBytes });
             }
