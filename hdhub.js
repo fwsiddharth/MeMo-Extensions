@@ -54,19 +54,55 @@ async function getVidlinkStream(tmdbId, mediaType, s, e) {
     const data = await res.json();
     if (!data.stream) return null;
     
-    // Attempt to extract the best quality or playlist
-    let streamUrl = null;
-    if (data.stream.playlist) {
-      streamUrl = data.stream.playlist;
-    } else if (data.stream.qualities) {
-      const q = data.stream.qualities;
-      const best = q['2160'] || q['1080'] || q['720'] || q['480'] || q['360'];
-      if (best) streamUrl = best.url;
-    } else if (data.url) {
-      streamUrl = data.url;
+    // Attempt to extract all qualities
+    let vidlinkServers = [];
+    
+    function formatBytes(bytes) {
+      if (!bytes) return "Unknown Size";
+      const b = parseInt(bytes, 10);
+      if (isNaN(b) || b === 0) return "Unknown Size";
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(b) / Math.log(k));
+      return parseFloat((b / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    if (!streamUrl) return null;
+    if (data.stream.qualities) {
+      for (const [res, obj] of Object.entries(data.stream.qualities)) {
+         if (obj && obj.url) {
+           vidlinkServers.push({
+             type: "mp4",
+             name: `Vidlink - ${res}p`,
+             quality: `${res}p`,
+             language: "Multi",
+             size: formatBytes(obj.size),
+             url: obj.url
+           });
+         }
+      }
+      // Sort highest quality first
+      vidlinkServers.sort((a, b) => parseInt(b.quality) - parseInt(a.quality));
+    }
+    
+    if (data.stream.playlist && vidlinkServers.length === 0) {
+      vidlinkServers.push({
+         type: "hls",
+         name: "Vidlink - Auto",
+         quality: "Auto",
+         language: "Multi",
+         size: "Unknown Size",
+         url: data.stream.playlist
+      });
+    } else if (data.url && vidlinkServers.length === 0) {
+      vidlinkServers.push({
+         type: "mp4",
+         name: "Vidlink - Auto",
+         quality: "Auto",
+         language: "Multi",
+         size: "Unknown Size",
+         url: data.url
+      });
+    }
 
     let subs = [];
     if (data.stream.captions) {
@@ -80,11 +116,7 @@ async function getVidlinkStream(tmdbId, mediaType, s, e) {
     }
 
     return {
-       url: streamUrl,
-       quality: "Auto (Native)",
-       name: "Vidlink",
-       size: "Unknown",
-       type: "hls", // hls triggers native player
+       servers: vidlinkServers,
        subtitles: subs
     };
   } catch (err) {
@@ -342,7 +374,7 @@ module.exports = {
       
       return {
         type: "mp4",
-        name: s.name.split(' ')[0] || `Server ${idx+1}`,
+        name: `HDHub - ${quality}`,
         quality,
         language: lang,
         size,
@@ -363,20 +395,13 @@ module.exports = {
     }
     const vidlinkData = await getVidlinkStream(tmdbIdForVidlink, type === "series" ? "tv" : "movie", sNum, eNum);
     
-    let finalType = "mp4";
+    let finalType = servers.length > 0 ? "mp4" : "mp4";
     let subtitles = [];
 
-    if (vidlinkData) {
-      // Put Vidlink at the top of the servers list!
-      servers.unshift({
-        type: vidlinkData.type,
-        name: vidlinkData.name,
-        quality: vidlinkData.quality,
-        language: "Multi",
-        size: vidlinkData.size,
-        url: vidlinkData.url,
-      });
-      finalType = vidlinkData.type;
+    if (vidlinkData && vidlinkData.servers.length > 0) {
+      // Put Vidlink servers at the top!
+      servers = [...vidlinkData.servers, ...servers];
+      finalType = vidlinkData.servers[0].type;
       subtitles = vidlinkData.subtitles || [];
     }
 
