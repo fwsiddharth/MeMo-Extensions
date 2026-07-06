@@ -29,6 +29,69 @@ function mapTmdbToAnime(item) {
     format: item.media_type === "tv" || item.first_air_date ? "TV" : "MOVIE"
   };
 }
+async function getVidlinkStream(tmdbId, mediaType, s, e) {
+  try {
+    const encRes = await fetch(`https://enc-dec.app/api/enc-vidlink?text=${tmdbId}`);
+    const encData = await encRes.json();
+    if (!encData.result) return null;
+    
+    const encryptedId = encData.result;
+    let url = "";
+    if (mediaType === "tv") {
+       url = `https://vidlink.pro/api/b/tv/${encryptedId}/${s}/${e}`;
+    } else {
+       url = `https://vidlink.pro/api/b/movie/${encryptedId}`;
+    }
+
+    const res = await fetch(url, {
+       headers: {
+         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+         "Referer": "https://vidlink.pro/",
+         "Origin": "https://vidlink.pro"
+       }
+    });
+    
+    const data = await res.json();
+    if (!data.stream) return null;
+    
+    // Attempt to extract the best quality or playlist
+    let streamUrl = null;
+    if (data.stream.playlist) {
+      streamUrl = data.stream.playlist;
+    } else if (data.stream.qualities) {
+      const q = data.stream.qualities;
+      const best = q['2160'] || q['1080'] || q['720'] || q['480'] || q['360'];
+      if (best) streamUrl = best.url;
+    } else if (data.url) {
+      streamUrl = data.url;
+    }
+
+    if (!streamUrl) return null;
+
+    let subs = [];
+    if (data.stream.captions) {
+      subs = data.stream.captions
+        .filter(c => c.type === 'srt' || c.type === 'vtt')
+        .map(c => ({
+          label: c.language,
+          url: c.url,
+          lang: c.language ? c.language.substring(0, 3).toLowerCase() : 'unk'
+        }));
+    }
+
+    return {
+       url: streamUrl,
+       quality: "Auto (Native)",
+       name: "Vidlink",
+       size: "Unknown",
+       type: "hls", // hls triggers native player
+       subtitles: subs
+    };
+  } catch (err) {
+    console.error("Vidlink extraction failed", err);
+    return null;
+  }
+}
 
 module.exports = {
   name: "hdhub",
@@ -227,39 +290,37 @@ module.exports = {
 
     if (!streamId || !streamId.startsWith("tt")) throw new Error("Could not find valid IMDb ID for this title.");
 
-    // 2. Fetch Stremio Addon Streams
-    const addonUrl = `https://hdhub.thevolecitor.qzz.io/eyJ0b3Jib3giOiJ1bnNldCIsInF1YWxpdGllcyI6IjIxNjBwLDEwODBwLDcyMHAiLCJzb3J0IjoiZGVzYyJ9`;
-    
-    const req = await fetch(`${addonUrl}/stream/${type}/${streamId}.json`);
-    const data = await req.json();
+    let hdhubServers = [];
+    let hdhubError = null;
 
-    if (!data.streams || data.streams.length === 0) {
-      throw new Error("No streams found on HdHub.");
-    }
+    try {
+      const addonUrl = `https://hdhub.thevolecitor.qzz.io/eyJ0b3Jib3giOiJ1bnNldCIsInF1YWxpdGllcyI6IjIxNjBwLDEwODBwLDcyMHAiLCJzb3J0IjoiZGVzYyJ9`;
+      const req = await fetch(`${addonUrl}/stream/${type}/${streamId}.json`);
+      const data = await req.json();
 
-    // Filter out streams that clearly belong to a different year (fixes Alpha 2026 vs 2018 mismatch)
-    const expectedYear = anime.seasonYear;
-    if (expectedYear) {
-      data.streams = data.streams.filter(s => {
-        const textToSearch = (s.name || "") + " " + (s.description || "") + " " + (s.title || "");
-        const yearMatches = textToSearch.match(/\b(19\d{2}|20\d{2})\b/g);
-        if (yearMatches && yearMatches.length > 0) {
-          // If we find a year in the torrent title (usually the first 4-digit number after the title)
-          // and it doesn't match our expected year, discard it to prevent playing the wrong movie.
-          const streamYear = parseInt(yearMatches[0]);
-          if (Math.abs(streamYear - expectedYear) > 1) { 
-            return false;
-          }
+      if (data.streams && data.streams.length > 0) {
+        let filteredStreams = data.streams;
+        const expectedYear = anime.seasonYear;
+        if (expectedYear) {
+          filteredStreams = filteredStreams.filter(s => {
+            const textToSearch = (s.name || "") + " " + (s.description || "") + " " + (s.title || "");
+            const yearMatches = textToSearch.match(/\b(19\d{2}|20\d{2})\b/g);
+            if (yearMatches && yearMatches.length > 0) {
+              const streamYear = parseInt(yearMatches[0]);
+              if (Math.abs(streamYear - expectedYear) > 1) { 
+                return false;
+              }
+            }
+            return true;
+          });
         }
-        return true;
-      });
+        hdhubServers = filteredStreams;
+      }
+    } catch(err) {
+      hdhubError = err.message;
     }
 
-    if (data.streams.length === 0) {
-      throw new Error("No matching streams found for this release year.");
-    }
-
-    const servers = data.streams.map((s, idx) => {
+    let servers = hdhubServers.map((s, idx) => {
       let quality = "Unknown";
       if (s.name.includes("2160") || s.name.includes("4K")) quality = "4K";
       else if (s.name.includes("1080")) quality = "1080p";
@@ -270,7 +331,6 @@ module.exports = {
       let lang = "Unknown Audio";
       
       if (s.description) {
-        // e.g. "[Download] [💾 7.07 GB] Inception...mkv\nHindi\nDownload | HdHub"
         const sizeMatch = s.description.match(/💾\s*([^\]]+)\]/);
         if (sizeMatch) size = sizeMatch[1].trim();
         
@@ -281,8 +341,8 @@ module.exports = {
       }
       
       return {
-        type: "mp4", // This tells Gear5 to use Native VideoPlayer
-        name: s.name.split(' ')[0] || `Server ${idx+1}`, // e.g. HdHub
+        type: "mp4",
+        name: s.name.split(' ')[0] || `Server ${idx+1}`,
         quality,
         language: lang,
         size,
@@ -290,43 +350,79 @@ module.exports = {
       };
     });
 
+    // Try Vidlink Native Fallback
+    const tmdbIdForVidlink = String(anime.tmdbId || anime.id || streamId.replace('tt', ''));
+    let sNum = 1;
+    let eNum = 1;
+    if (type === "series") {
+       const p = String(episodeId).split(":");
+       if (p.length >= 3) {
+         sNum = p[1];
+         eNum = p[2];
+       }
+    }
+    const vidlinkData = await getVidlinkStream(tmdbIdForVidlink, type === "series" ? "tv" : "movie", sNum, eNum);
+    
+    let finalType = "mp4";
     let subtitles = [];
-    try {
-      const subReq = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${type}/${streamId}.json`);
-      const subData = await subReq.json();
-      if (subData.subtitles) {
-        const allowedLangs = { 'eng': 'English', 'hin': 'Hindi', 'spa': 'Spanish', 'ara': 'Arabic' };
-        let subsRaw = subData.subtitles
-          .filter(s => allowedLangs[s.lang])
-          .map(s => ({
-            label: allowedLangs[s.lang],
-            url: s.url,
-            lang: s.lang
-          }));
-        
-        subsRaw.sort((a, b) => {
-          if (a.lang === 'eng') return -1;
-          if (b.lang === 'eng') return 1;
-          return 0;
-        });
 
-        const uniqueSubs = [];
-        const seenLangs = new Set();
-        for (let sub of subsRaw) {
-          if (!seenLangs.has(sub.lang)) {
-            seenLangs.add(sub.lang);
-            uniqueSubs.push(sub);
+    if (vidlinkData) {
+      // Put Vidlink at the top of the servers list!
+      servers.unshift({
+        type: vidlinkData.type,
+        name: vidlinkData.name,
+        quality: vidlinkData.quality,
+        language: "Multi",
+        size: vidlinkData.size,
+        url: vidlinkData.url,
+      });
+      finalType = vidlinkData.type;
+      subtitles = vidlinkData.subtitles || [];
+    }
+
+    if (servers.length === 0) {
+      throw new Error(`No streams found. HDHub Error: ${hdhubError}`);
+    }
+
+    // Only fetch opensubtitles if Vidlink didn't provide enough
+    if (subtitles.length === 0) {
+      try {
+        const subReq = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${type}/${streamId}.json`);
+        const subData = await subReq.json();
+        if (subData.subtitles) {
+          const allowedLangs = { 'eng': 'English', 'hin': 'Hindi', 'spa': 'Spanish', 'ara': 'Arabic' };
+          let subsRaw = subData.subtitles
+            .filter(s => allowedLangs[s.lang])
+            .map(s => ({
+              label: allowedLangs[s.lang],
+              url: s.url,
+              lang: s.lang
+            }));
+          
+          subsRaw.sort((a, b) => {
+            if (a.lang === 'eng') return -1;
+            if (b.lang === 'eng') return 1;
+            return 0;
+          });
+
+          const uniqueSubs = [];
+          const seenLangs = new Set();
+          for (let sub of subsRaw) {
+            if (!seenLangs.has(sub.lang)) {
+              seenLangs.add(sub.lang);
+              uniqueSubs.push(sub);
+            }
           }
+          subtitles = uniqueSubs;
         }
-        subtitles = uniqueSubs;
+      } catch (e) {
+        console.error("Failed to fetch subtitles from OpenSubtitles", e);
       }
-    } catch (e) {
-      console.error("Failed to fetch subtitles from OpenSubtitles", e);
     }
 
     return {
       servers: servers,
-      type: "mp4",
+      type: finalType,
       url: servers[0].url,
       subtitles: subtitles
     };
