@@ -151,12 +151,46 @@ async function hubCloudExtractor(url) {
         
         // Now extract the actual FSL/10Gbps/Pixeldrain links!
         const links = [];
-        const aMatches = pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*btn[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
+        const aMatches = pageData.match(/<a[^>]+>([\s\S]*?)<\/a>/gi) || [];
         
         for (const aTag of aMatches) {
+            if (!aTag.includes('class=') || !aTag.match(/class=["'][^"']*btn[^"']*["']/i)) {
+                // If it's a hubdrive/hubcdn page that links to hubcloud without a btn class, we can catch it here if we want.
+                // But usually the button to proceed to hubcloud DOES have btn class.
+                // If it doesn't have btn class, skip it to avoid random links.
+                // Actually, let's just make sure it has href.
+            }
+            
             const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
             const href = hrefMatch ? hrefMatch[1] : null;
             if (!href) continue;
+            
+            const classMatch = aTag.match(/class=["'][^"']*btn[^"']*["']/i);
+            
+            // If it's a direct link to hubcloud from hubdrive.tips, follow it!
+            if (href.includes('hubcloud.cx/drive/')) {
+                try {
+                    const rHC = await fetch(href, { headers: HEADERS });
+                    let hcData = await rHC.text();
+                    const genMatch = hcData.match(/<a[^>]+id=["']download["'][^>]+href=["']([^"']+)["']/i) || hcData.match(/<a[^>]+href=["']([^"']+)["'][^>]+id=["']download["']/i);
+                    if (genMatch) {
+                        const res3 = await fetch(genMatch[1], { headers: HEADERS });
+                        hcData = await res3.text();
+                    }
+                    // Now recursive-ish extract from hcData!
+                    const hcMatches = hcData.match(/<a[^>]+>([\s\S]*?)<\/a>/gi) || [];
+                    for (const hcTag of hcMatches) {
+                        if (!hcTag.match(/class=["'][^"']*btn[^"']*["']/i)) continue;
+                        const hcHrefM = hcTag.match(/href=["']([^"']+)["']/i);
+                        if (!hcHrefM) continue;
+                        aMatches.push(hcTag); // Push them to be processed by the main loop!
+                    }
+                } catch(e) {}
+                continue;
+            }
+            
+            if (!classMatch) continue;
+            
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
             // Drop samples and tiny files (under 100MB to be safe for TV episodes)
