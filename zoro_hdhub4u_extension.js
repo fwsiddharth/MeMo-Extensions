@@ -247,7 +247,7 @@ function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear) {
 }
 
 async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
-    const searchQuery = mediaType === "tv" && sNum ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
+    const searchQuery = mediaType === "tv" && sNum > 1 ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
     const searchResults = await searchHDHub(searchQuery);
     
     const validResults = searchResults.filter(res => isTitleMatch(res.title, mediaInfo.title, res.year, mediaInfo.year));
