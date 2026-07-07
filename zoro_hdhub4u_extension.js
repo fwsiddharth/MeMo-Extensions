@@ -159,8 +159,9 @@ async function hubCloudExtractor(url, providedQuality) {
             if (!href) continue;
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
-            // Drop samples and tiny files (under 100MB to be safe for TV episodes)
+            // Drop samples, archives, and tiny files (under 100MB to be safe for TV episodes)
             if (href.toLowerCase().includes('sample') || pageTitle.toLowerCase().includes('sample') || text.toLowerCase().includes('sample')) continue;
+            if (pageTitle.toLowerCase().includes('.zip') || pageTitle.toLowerCase().includes('.rar')) continue;
             if (sizeInBytes > 0 && sizeInBytes < 100 * 1024 * 1024) continue;
             
             // Use the provided quality from the HDHub4u page context, fallback to 1080p
@@ -264,21 +265,6 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
             const html = await res.text();
             
             let targetHtml = html;
-            if (mediaType === "tv" && eNum) {
-                const epRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
-                const nextEpRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
-                
-                let startIdx = html.search(epRegex);
-                if (startIdx !== -1) {
-                    let remainder = html.substring(startIdx + 5);
-                    let endIdx = remainder.search(nextEpRegex);
-                    if (endIdx !== -1) {
-                        targetHtml = html.substring(startIdx, startIdx + 5 + endIdx);
-                    } else {
-                        targetHtml = html.substring(startIdx);
-                    }
-                }
-            }
             
             let currentQuality = "1080p";
             if (bestMatch.title.toLowerCase().match(/4k|2160p/)) {
@@ -288,6 +274,8 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
             const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
             let lastIndex = 0;
             let match;
+            
+            let currentEpisode = null;
             
             while ((match = linkRegex.exec(targetHtml)) !== null) {
                 const href = match[1];
@@ -302,6 +290,19 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
                     else if (lastQ === '1080p') currentQuality = '1080p';
                     else if (lastQ === '720p') currentQuality = '720p';
                     else if (lastQ === '480p') currentQuality = '480p';
+                }
+                
+                if (mediaType === "tv" && eNum) {
+                    const epRegexStr = /(?:Episode|Ep|E)[\s\-]*0?(\d+)(?!\d)/gi;
+                    let epMatch;
+                    while ((epMatch = epRegexStr.exec(textBeforeLink)) !== null) {
+                        currentEpisode = parseInt(epMatch[1]);
+                    }
+                    
+                    const innerEpMatch = innerText.match(/(?:Episode|Ep|E)[\s\-]*0?(\d+)(?!\d)/i);
+                    if (innerEpMatch) currentEpisode = parseInt(innerEpMatch[1]);
+                    
+                    if (currentEpisode !== eNum) continue;
                 }
                 
                 let linkQuality = currentQuality;
