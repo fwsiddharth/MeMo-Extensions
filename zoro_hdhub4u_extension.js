@@ -85,7 +85,7 @@ async function getRedirectLinks(url) {
     } catch(e) { return url; }
 }
 
-async function hubCloudExtractor(url) {
+async function hubCloudExtractor(url, providedQuality) {
     try {
         let currentUrl = url;
         let pageData = "";
@@ -163,15 +163,16 @@ async function hubCloudExtractor(url) {
             if (href.toLowerCase().includes('sample') || pageTitle.toLowerCase().includes('sample') || text.toLowerCase().includes('sample')) continue;
             if (sizeInBytes > 0 && sizeInBytes < 100 * 1024 * 1024) continue;
             
-            // Extract Quality & enforce strict resolutions from the pageTitle (filename)
-            let qStr = "1080p"; // Default to 1080p if unspecified
+            // Use the provided quality from the HDHub4u page context, fallback to 1080p
+            let qStr = providedQuality || "1080p";
             const searchString = (pageTitle + " " + text).toLowerCase();
             
-            if (searchString.match(/4k|2160p/)) qStr = "4K";
-            else if (searchString.match(/1080p/)) qStr = "1080p";
-            else if (searchString.match(/720p/)) qStr = "720p";
-            else if (searchString.match(/480p|360p/)) continue; // Drop low qualities explicitly
-            // If it doesn't mention resolution, we keep it as 1080p rather than dropping it entirely.
+            if (!providedQuality) {
+                if (searchString.match(/4k|2160p/)) qStr = "4K";
+                else if (searchString.match(/1080p/)) qStr = "1080p";
+                else if (searchString.match(/720p/)) qStr = "720p";
+            }
+            if (qStr === "480p" || searchString.match(/480p|360p/)) continue; // Drop low qualities explicitly
             
             if (text.includes("FSL")) {
                 links.push({ url: href, quality: qStr, source: "Server 2 (High Speed)", size: sizeInBytes });
@@ -202,13 +203,13 @@ async function hubCloudExtractor(url) {
     } catch(e) { return []; }
 }
 
-async function loadExtractor(url) {
+async function loadExtractor(url, providedQuality) {
     try {
         if (url.includes("?id=") || url.includes("techyboy4u")) {
             url = await getRedirectLinks(url);
         }
-        if (url.includes('hubcloud') || url.includes('hblinks') || url.includes('hubdrive') || url.includes('hubcdn')) return await hubCloudExtractor(url);
-        if (url.includes('pixeldrain')) return [{ url, quality: 1080, source: 'Pixeldrain', size: 0 }];
+        if (url.includes('hubcloud') || url.includes('hblinks') || url.includes('hubdrive') || url.includes('hubcdn')) return await hubCloudExtractor(url, providedQuality);
+        if (url.includes('pixeldrain')) return [{ url, quality: providedQuality || '1080p', source: 'Pixeldrain', size: 0 }];
         return [];
     } catch(e) { return []; }
 }
@@ -276,15 +277,23 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     }
     
     let initialLinks = [];
-    const aTags = targetHtml.match(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi) || [];
-    for (let aTag of aTags) {
-        const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
-        if (hrefMatch) {
-            const href = hrefMatch[1];
+    const regex = /(480p|720p|1080p|2160p|4K)|<a[^>]+href=["']([^"']+)["']/gi;
+    let currentQuality = "1080p";
+    let match;
+    
+    while ((match = regex.exec(targetHtml)) !== null) {
+        if (match[1]) {
+            let q = match[1].toLowerCase();
+            if (q === '2160p' || q === '4k') currentQuality = '4K';
+            else if (q === '1080p') currentQuality = '1080p';
+            else if (q === '720p') currentQuality = '720p';
+            else if (q === '480p') currentQuality = '480p';
+        } else if (match[2]) {
+            const href = match[2];
             if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
                 href.includes('hblinks') || href.includes('hubcloud') || 
                 href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
-                initialLinks.push({ url: href });
+                initialLinks.push({ url: href, quality: currentQuality });
             }
         }
     }
@@ -295,7 +304,7 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const streams = [];
     for (const link of initialLinks) {
         if(!link.url) continue;
-        const extracted = await loadExtractor(link.url);
+        const extracted = await loadExtractor(link.url, link.quality);
         for(const ext of extracted) {
             streams.push({
                 type: "mkv", // HDHub4u almost exclusively uploads MKVs
