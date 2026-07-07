@@ -221,7 +221,7 @@ async function searchHDHub(query) {
     if (!data || !data.hits) return [];
     return data.hits.map(hit => {
         const doc = hit.document;
-        const yearMatch = doc.post_title.match(/\((\d{4})\)|\b(\d{4})\b/);
+        const yearMatch = doc.post_title.match(/\b(19\d{2}|20\d{2})\b/);
         return {
             title: doc.post_title,
             url: doc.permalink.startsWith('/') ? `${MAIN_URL}${doc.permalink}` : doc.permalink,
@@ -231,12 +231,17 @@ async function searchHDHub(query) {
 }
 
 function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear) {
-    const normalize = (str) => String(str).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const searchNorm = normalize(searchTitle.replace(/\(\d{4}\).*$/, ''));
-    const targetNorm = normalize(targetTitle);
+    let cleanSearch = searchTitle.split(/\(|\[/)[0].trim().toLowerCase().replace(/[^a-z0-9\s]/g, '');
+    let cleanTarget = targetTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '');
     
-    const isNameMatch = searchNorm.includes(targetNorm) || targetNorm.includes(searchNorm);
+    let isNameMatch = cleanSearch === cleanTarget;
     
+    if (!isNameMatch) {
+       if (cleanSearch.startsWith(cleanTarget + " season") || cleanSearch.startsWith(cleanTarget + " part")) {
+           isNameMatch = true;
+       }
+    }
+
     if (isNameMatch) {
         if (searchYear && targetYear) {
             if (Math.abs(searchYear - targetYear) > 1) return false;
@@ -410,6 +415,8 @@ module.exports = {
           id: `${imdbId}:${s.season_number}:${e.episode_number}`,
           number: e.episode_number,
           title: e.name || `Episode ${e.episode_number}`,
+          overview: e.overview,
+          image: e.still_path ? `https://image.tmdb.org/t/p/w300${e.still_path}` : null,
           season: s.season_number,
           imdbId
         }));
