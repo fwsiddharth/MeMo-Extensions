@@ -74,7 +74,7 @@ async function getVidlinkStream(tmdbId, mediaType, s, e) {
              type: "mp4",
              name: `Vidlink - ${res}p`,
              quality: `${res}p`,
-             language: "Multi",
+             language: "Native",
              size: formatBytes(obj.size),
              url: obj.url
            });
@@ -89,7 +89,7 @@ async function getVidlinkStream(tmdbId, mediaType, s, e) {
          type: "hls",
          name: "Vidlink - Auto",
          quality: "Auto",
-         language: "Multi",
+         language: "Native",
          size: "Unknown Size",
          url: data.stream.playlist
       });
@@ -98,22 +98,16 @@ async function getVidlinkStream(tmdbId, mediaType, s, e) {
          type: "mp4",
          name: "Vidlink - Auto",
          quality: "Auto",
-         language: "Multi",
+         language: "Native",
          size: "Unknown Size",
          url: data.url
       });
     }
 
+    // Vidlink subtitles are hosted on AWS Cloudfront and are IP-locked to the enc-dec.app proxy server.
+    // Fetching them from the client device will result in a 403 Access Denied.
+    // Therefore, we do not return them to prevent cluttering the UI with broken subtitles.
     let subs = [];
-    if (data.stream.captions) {
-      subs = data.stream.captions
-        .filter(c => c.type === 'srt' || c.type === 'vtt')
-        .map(c => ({
-          label: c.language,
-          url: c.url,
-          lang: c.language ? c.language.substring(0, 3).toLowerCase() : 'unk'
-        }));
-    }
 
     return {
        servers: vidlinkServers,
@@ -449,7 +443,12 @@ module.exports = {
       servers: servers,
       type: finalType,
       url: servers[0].url,
-      subtitles: subtitles
+      subtitles: subtitles,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": "https://vidlink.pro/",
+        "Origin": "https://vidlink.pro"
+      }
     };
   }
 };

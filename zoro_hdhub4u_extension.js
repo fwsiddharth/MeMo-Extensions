@@ -151,46 +151,12 @@ async function hubCloudExtractor(url) {
         
         // Now extract the actual FSL/10Gbps/Pixeldrain links!
         const links = [];
-        const aMatches = pageData.match(/<a[^>]+>([\s\S]*?)<\/a>/gi) || [];
+        const aMatches = pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*btn[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
         
         for (const aTag of aMatches) {
-            if (!aTag.includes('class=') || !aTag.match(/class=["'][^"']*btn[^"']*["']/i)) {
-                // If it's a hubdrive/hubcdn page that links to hubcloud without a btn class, we can catch it here if we want.
-                // But usually the button to proceed to hubcloud DOES have btn class.
-                // If it doesn't have btn class, skip it to avoid random links.
-                // Actually, let's just make sure it has href.
-            }
-            
             const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
             const href = hrefMatch ? hrefMatch[1] : null;
             if (!href) continue;
-            
-            const classMatch = aTag.match(/class=["'][^"']*btn[^"']*["']/i);
-            
-            // If it's a direct link to hubcloud from hubdrive.tips, follow it!
-            if (href.includes('hubcloud.cx/drive/')) {
-                try {
-                    const rHC = await fetch(href, { headers: HEADERS });
-                    let hcData = await rHC.text();
-                    const genMatch = hcData.match(/<a[^>]+id=["']download["'][^>]+href=["']([^"']+)["']/i) || hcData.match(/<a[^>]+href=["']([^"']+)["'][^>]+id=["']download["']/i);
-                    if (genMatch) {
-                        const res3 = await fetch(genMatch[1], { headers: HEADERS });
-                        hcData = await res3.text();
-                    }
-                    // Now recursive-ish extract from hcData!
-                    const hcMatches = hcData.match(/<a[^>]+>([\s\S]*?)<\/a>/gi) || [];
-                    for (const hcTag of hcMatches) {
-                        if (!hcTag.match(/class=["'][^"']*btn[^"']*["']/i)) continue;
-                        const hcHrefM = hcTag.match(/href=["']([^"']+)["']/i);
-                        if (!hcHrefM) continue;
-                        aMatches.push(hcTag); // Push them to be processed by the main loop!
-                    }
-                } catch(e) {}
-                continue;
-            }
-            
-            if (!classMatch) continue;
-            
             const text = aTag.replace(/<[^>]+>/g, '').trim();
             
             // Drop samples and tiny files (under 100MB to be safe for TV episodes)
@@ -201,11 +167,10 @@ async function hubCloudExtractor(url) {
             let qStr = "1080p"; // Default to 1080p if unspecified
             const searchString = (pageTitle + " " + text).toLowerCase();
             
-            if (searchString.match(/\b(?:2160p)\b/)) qStr = "4K";
-            else if (searchString.match(/\b1080p\b/)) qStr = "1080p";
-            else if (searchString.match(/\b720p\b/)) qStr = "720p";
-            else if (searchString.match(/\b(?:480p|360p)\b/)) continue; // Drop low qualities explicitly
-            else if (searchString.match(/\b4k\b/)) qStr = "4K";
+            if (searchString.match(/4k|2160p/)) qStr = "4K";
+            else if (searchString.match(/1080p/)) qStr = "1080p";
+            else if (searchString.match(/720p/)) qStr = "720p";
+            else if (searchString.match(/480p|360p/)) continue; // Drop low qualities explicitly
             // If it doesn't mention resolution, we keep it as 1080p rather than dropping it entirely.
             
             if (text.includes("FSL")) {
@@ -282,7 +247,7 @@ function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear) {
 }
 
 async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
-    const searchQuery = mediaType === "tv" && sNum > 1 ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
+    const searchQuery = mediaType === "tv" && sNum ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
     const searchResults = await searchHDHub(searchQuery);
     
     const validResults = searchResults.filter(res => isTitleMatch(res.title, mediaInfo.title, res.year, mediaInfo.year));
@@ -296,15 +261,11 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     let targetHtml = html;
     if (mediaType === "tv" && eNum) {
         // More robust episode regex to catch formats like "E02", "Ep 02", "Episode 2", "EP - 2", "Episode-2"
-        const epRegex = new RegExp(`(?:>|\\s)(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
-        const nextEpRegex = new RegExp(`(?:>|\\s)(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
+        const epRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
+        const nextEpRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
         
         let startIdx = html.search(epRegex);
         if (startIdx !== -1) {
-            // Backtrack to nearest preceding opening tag (like <p>, <div>, <h3>) to not chop off links if episode is inside the link text
-            let tagIdx = html.lastIndexOf('<', startIdx);
-            if (tagIdx !== -1) startIdx = tagIdx;
-            
             let remainder = html.substring(startIdx + 5);
             let endIdx = remainder.search(nextEpRegex);
             if (endIdx !== -1) {
@@ -326,7 +287,7 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
             const href = hrefMatch[1];
             if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
                 href.includes('hblinks') || href.includes('hubcloud') || 
-                href.includes('hubdrive') || href.includes('pixeldrain')) {
+                href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
                 initialLinks.push({ url: href });
             }
         }
@@ -449,8 +410,6 @@ module.exports = {
           id: `${imdbId}:${s.season_number}:${e.episode_number}`,
           number: e.episode_number,
           title: e.name || `Episode ${e.episode_number}`,
-          image: e.still_path ? `https://image.tmdb.org/t/p/w300${e.still_path}` : null,
-          overview: e.overview || "",
           season: s.season_number,
           imdbId
         }));
@@ -483,7 +442,11 @@ module.exports = {
       servers: servers,
       type: "mp4",
       url: servers[0].url,
-      subtitles: []
+      subtitles: [],
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": "https://new2.hdhub4u.cl/"
+      }
     };
   }
 };
