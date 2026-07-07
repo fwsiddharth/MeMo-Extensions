@@ -324,13 +324,17 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     // Prevent timeouts by capping the number of links we fetch concurrently or sequentially
     initialLinks = initialLinks.slice(0, 12);
     
-    // Execute all extractors concurrently to massively reduce scraping time and prevent timeouts
-    const extractionPromises = initialLinks.map(link => {
-        if (!link.url) return Promise.resolve([]);
-        return loadExtractor(link.url, link.quality);
-    });
-    
-    const extractedResults = await Promise.all(extractionPromises);
+    // Execute extractors in chunks of 3 to avoid triggering HubCloud rate-limiting / IP bans (which cause Playback Errors)
+    const extractedResults = [];
+    for (let i = 0; i < initialLinks.length; i += 3) {
+        const chunk = initialLinks.slice(i, i + 3);
+        const chunkPromises = chunk.map(link => {
+            if (!link.url) return Promise.resolve([]);
+            return loadExtractor(link.url, link.quality);
+        });
+        const chunkRes = await Promise.all(chunkPromises);
+        extractedResults.push(...chunkRes);
+    }
     
     const streams = [];
     for (const extracted of extractedResults) {
