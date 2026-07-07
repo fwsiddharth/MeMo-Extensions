@@ -280,27 +280,41 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
                 }
             }
             
-            const regex = /(480p|720p|1080p|2160p|4K)|<a[^>]+href=["']([^"']+)["']/gi;
             let currentQuality = "1080p";
             if (bestMatch.title.toLowerCase().match(/4k|2160p/)) {
-                currentQuality = "4K"; // Default to 4K if the post title explicitly says 4K
+                currentQuality = "4K";
             }
             
+            const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+            let lastIndex = 0;
             let match;
-            while ((match = regex.exec(targetHtml)) !== null) {
-                if (match[1]) {
-                    let q = match[1].toLowerCase();
-                    if (q === '2160p' || q === '4k') currentQuality = '4K';
-                    else if (q === '1080p') currentQuality = '1080p';
-                    else if (q === '720p') currentQuality = '720p';
-                    else if (q === '480p') currentQuality = '480p';
-                } else if (match[2]) {
-                    const href = match[2];
-                    if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
-                        href.includes('hblinks') || href.includes('hubcloud') || 
-                        href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
-                        initialLinks.push({ url: href, quality: currentQuality });
-                    }
+            
+            while ((match = linkRegex.exec(targetHtml)) !== null) {
+                const href = match[1];
+                const innerText = match[2];
+                const textBeforeLink = targetHtml.substring(lastIndex, match.index);
+                lastIndex = linkRegex.lastIndex;
+                
+                const qMatch = textBeforeLink.match(/(480p|720p|1080p|2160p|4K)/gi);
+                if (qMatch) {
+                    const lastQ = qMatch[qMatch.length - 1].toLowerCase();
+                    if (lastQ === '2160p' || lastQ === '4k') currentQuality = '4K';
+                    else if (lastQ === '1080p') currentQuality = '1080p';
+                    else if (lastQ === '720p') currentQuality = '720p';
+                    else if (lastQ === '480p') currentQuality = '480p';
+                }
+                
+                let linkQuality = currentQuality;
+                const innerTextLower = innerText.toLowerCase();
+                if (innerTextLower.match(/4k|2160p/)) linkQuality = '4K';
+                else if (innerTextLower.includes('1080p')) linkQuality = '1080p';
+                else if (innerTextLower.includes('720p')) linkQuality = '720p';
+                else if (innerTextLower.includes('480p')) linkQuality = '480p';
+                
+                if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
+                    href.includes('hblinks') || href.includes('hubcloud') || 
+                    href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
+                    initialLinks.push({ url: href, quality: linkQuality });
                 }
             }
         } catch(e) { console.log(e); }
