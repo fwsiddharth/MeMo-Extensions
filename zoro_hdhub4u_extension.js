@@ -167,10 +167,11 @@ async function hubCloudExtractor(url) {
             let qStr = "1080p"; // Default to 1080p if unspecified
             const searchString = (pageTitle + " " + text).toLowerCase();
             
-            if (searchString.match(/4k|2160p/)) qStr = "4K";
-            else if (searchString.match(/1080p/)) qStr = "1080p";
-            else if (searchString.match(/720p/)) qStr = "720p";
-            else if (searchString.match(/480p|360p/)) continue; // Drop low qualities explicitly
+            if (searchString.match(/\b(?:2160p)\b/)) qStr = "4K";
+            else if (searchString.match(/\b1080p\b/)) qStr = "1080p";
+            else if (searchString.match(/\b720p\b/)) qStr = "720p";
+            else if (searchString.match(/\b(?:480p|360p)\b/)) continue; // Drop low qualities explicitly
+            else if (searchString.match(/\b4k\b/)) qStr = "4K";
             // If it doesn't mention resolution, we keep it as 1080p rather than dropping it entirely.
             
             if (text.includes("FSL")) {
