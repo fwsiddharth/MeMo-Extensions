@@ -230,7 +230,7 @@ async function searchHDHub(query) {
     });
 }
 
-function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear) {
+function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear, sNum) {
     let cleanSearch = searchTitle.split(/\(|\[/)[0].trim().toLowerCase().replace(/[^a-z0-9\s]/g, '');
     let cleanTarget = targetTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '');
     
@@ -243,6 +243,17 @@ function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear) {
     }
 
     if (isNameMatch) {
+        if (sNum) {
+            const titleLower = searchTitle.toLowerCase();
+            const match = titleLower.match(/season\s*(\d+)/);
+            if (match) {
+                const foundSeason = parseInt(match[1]);
+                if (foundSeason !== parseInt(sNum)) {
+                    return false;
+                }
+            }
+        }
+        
         if (searchYear && targetYear) {
             if (Math.abs(searchYear - targetYear) > 1) return false;
         }
@@ -255,7 +266,7 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const searchQuery = mediaType === "tv" && sNum ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
     const searchResults = await searchHDHub(searchQuery);
     
-    const validResults = searchResults.filter(res => isTitleMatch(res.title, mediaInfo.title, res.year, mediaInfo.year));
+    const validResults = searchResults.filter(res => isTitleMatch(res.title, mediaInfo.title, res.year, mediaInfo.year, sNum));
     if (!validResults.length) return [];
     
     // Find best match
