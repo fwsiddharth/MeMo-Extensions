@@ -277,8 +277,8 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     let targetHtml = html;
     if (mediaType === "tv" && eNum) {
         // More robust episode regex to catch formats like "E02", "Ep 02", "Episode 2", "EP - 2", "Episode-2"
-        const epRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
-        const nextEpRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
+        const epRegex = new RegExp(`(?:Episode|Ep|\\bE)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
+        const nextEpRegex = new RegExp(`(?:Episode|Ep|\\bE)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
         
         let startIdx = html.search(epRegex);
         if (startIdx !== -1) {
