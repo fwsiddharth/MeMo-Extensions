@@ -230,13 +230,31 @@ async function searchHDHub(query) {
     });
 }
 
+function isTitleMatch(searchTitle, targetTitle, searchYear, targetYear) {
+    const normalize = (str) => String(str).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const searchNorm = normalize(searchTitle.replace(/\(\d{4}\).*$/, ''));
+    const targetNorm = normalize(targetTitle);
+    
+    const isNameMatch = searchNorm.includes(targetNorm) || targetNorm.includes(searchNorm);
+    
+    if (isNameMatch) {
+        if (searchYear && targetYear) {
+            if (Math.abs(searchYear - targetYear) > 1) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const searchQuery = mediaType === "tv" && sNum ? `${mediaInfo.title} Season ${sNum}` : mediaInfo.title;
     const searchResults = await searchHDHub(searchQuery);
-    if (!searchResults.length) return [];
+    
+    const validResults = searchResults.filter(res => isTitleMatch(res.title, mediaInfo.title, res.year, mediaInfo.year));
+    if (!validResults.length) return [];
     
     // Find best match
-    let bestMatch = searchResults[0];
+    let bestMatch = validResults[0];
     const res = await fetch(bestMatch.url, { headers: HEADERS });
     const html = await res.text();
     
