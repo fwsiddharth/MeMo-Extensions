@@ -33,7 +33,7 @@ function mapTmdbToAnime(item) {
 // ---- NUVIO HDHUB4U SCRAPER LOGIC (REGEX ONLY) ---- //
 let MAIN_URL = "https://new2.hdhub4u.cl";
 const HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.144 Mobile Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Referer": `${MAIN_URL}/`,
 };
 
@@ -314,7 +314,9 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
                 
                 if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
                     href.includes('hblinks') || href.includes('hubcloud') || 
-                    href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
+                    href.includes('hubdrive') || href.includes('pixeldrain')) {
+                    // Skip hubcdn.sbs links - they ALWAYS fail with Cloudflare 403 and the bypass never works for native fetch
+                    if (href.includes('hubcdn.sbs')) continue;
                     initialLinks.push({ url: href, quality: linkQuality });
                 }
             }
