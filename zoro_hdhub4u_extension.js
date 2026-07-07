@@ -33,7 +33,7 @@ function mapTmdbToAnime(item) {
 // ---- NUVIO HDHUB4U SCRAPER LOGIC (REGEX ONLY) ---- //
 let MAIN_URL = "https://new2.hdhub4u.cl";
 const HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.144 Mobile Safari/537.36",
     "Referer": `${MAIN_URL}/`,
 };
 
