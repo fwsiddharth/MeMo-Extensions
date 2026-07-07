@@ -266,6 +266,10 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
         
         let startIdx = html.search(epRegex);
         if (startIdx !== -1) {
+            // Backtrack to nearest preceding opening tag (like <p>, <div>, <h3>) to not chop off links if episode is inside the link text
+            let tagIdx = html.lastIndexOf('<', startIdx);
+            if (tagIdx !== -1) startIdx = tagIdx;
+            
             let remainder = html.substring(startIdx + 5);
             let endIdx = remainder.search(nextEpRegex);
             if (endIdx !== -1) {
