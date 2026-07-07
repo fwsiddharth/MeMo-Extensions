@@ -320,8 +320,12 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
         } catch(e) { console.log(e); }
     }
     
+    // Sort links by quality before slicing to ensure we keep 4K and 1080p links instead of dropping them
+    const qPriority = { "4K": 4, "1080p": 3, "720p": 2, "480p": 1 };
+    initialLinks.sort((a, b) => (qPriority[b.quality] || 0) - (qPriority[a.quality] || 0));
+    
     // Prevent timeouts by capping the number of links we fetch concurrently or sequentially
-    initialLinks = initialLinks.slice(0, 12);
+    initialLinks = initialLinks.slice(0, 15);
     
     const streams = [];
     for (const link of initialLinks) {
