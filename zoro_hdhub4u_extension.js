@@ -326,7 +326,7 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
             const href = hrefMatch[1];
             if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
                 href.includes('hblinks') || href.includes('hubcloud') || 
-                href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
+                href.includes('hubdrive') || href.includes('pixeldrain')) {
                 initialLinks.push({ url: href });
             }
         }
