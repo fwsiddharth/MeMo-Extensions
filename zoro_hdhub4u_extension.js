@@ -254,48 +254,56 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     const validResults = searchResults.filter(res => isTitleMatch(res.title, mediaInfo.title, res.year, mediaInfo.year));
     if (!validResults.length) return [];
     
-    // Find best match
-    let bestMatch = validResults[0];
-    const res = await fetch(bestMatch.url, { headers: HEADERS });
-    const html = await res.text();
-    
-    let targetHtml = html;
-    if (mediaType === "tv" && eNum) {
-        const epRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
-        const nextEpRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
-        
-        let startIdx = html.search(epRegex);
-        if (startIdx !== -1) {
-            let remainder = html.substring(startIdx + 5);
-            let endIdx = remainder.search(nextEpRegex);
-            if (endIdx !== -1) {
-                targetHtml = html.substring(startIdx, startIdx + 5 + endIdx);
-            } else {
-                targetHtml = html.substring(startIdx);
-            }
-        }
-    }
-    
+    // Process up to top 3 valid matches to catch separate 4K posts
+    const topMatches = validResults.slice(0, 3);
     let initialLinks = [];
-    const regex = /(480p|720p|1080p|2160p|4K)|<a[^>]+href=["']([^"']+)["']/gi;
-    let currentQuality = "1080p";
-    let match;
     
-    while ((match = regex.exec(targetHtml)) !== null) {
-        if (match[1]) {
-            let q = match[1].toLowerCase();
-            if (q === '2160p' || q === '4k') currentQuality = '4K';
-            else if (q === '1080p') currentQuality = '1080p';
-            else if (q === '720p') currentQuality = '720p';
-            else if (q === '480p') currentQuality = '480p';
-        } else if (match[2]) {
-            const href = match[2];
-            if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
-                href.includes('hblinks') || href.includes('hubcloud') || 
-                href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
-                initialLinks.push({ url: href, quality: currentQuality });
+    for (const bestMatch of topMatches) {
+        try {
+            const res = await fetch(bestMatch.url, { headers: HEADERS });
+            const html = await res.text();
+            
+            let targetHtml = html;
+            if (mediaType === "tv" && eNum) {
+                const epRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum}(?!\\d)`, 'i');
+                const nextEpRegex = new RegExp(`(?:Episode|Ep|E)[\\s\\-]*0?${eNum + 1}(?!\\d)`, 'i');
+                
+                let startIdx = html.search(epRegex);
+                if (startIdx !== -1) {
+                    let remainder = html.substring(startIdx + 5);
+                    let endIdx = remainder.search(nextEpRegex);
+                    if (endIdx !== -1) {
+                        targetHtml = html.substring(startIdx, startIdx + 5 + endIdx);
+                    } else {
+                        targetHtml = html.substring(startIdx);
+                    }
+                }
             }
-        }
+            
+            const regex = /(480p|720p|1080p|2160p|4K)|<a[^>]+href=["']([^"']+)["']/gi;
+            let currentQuality = "1080p";
+            if (bestMatch.title.toLowerCase().match(/4k|2160p/)) {
+                currentQuality = "4K"; // Default to 4K if the post title explicitly says 4K
+            }
+            
+            let match;
+            while ((match = regex.exec(targetHtml)) !== null) {
+                if (match[1]) {
+                    let q = match[1].toLowerCase();
+                    if (q === '2160p' || q === '4k') currentQuality = '4K';
+                    else if (q === '1080p') currentQuality = '1080p';
+                    else if (q === '720p') currentQuality = '720p';
+                    else if (q === '480p') currentQuality = '480p';
+                } else if (match[2]) {
+                    const href = match[2];
+                    if (href.includes('techyboy4u') || href.includes('gadgetsweb') || 
+                        href.includes('hblinks') || href.includes('hubcloud') || 
+                        href.includes('hubdrive') || href.includes('hubcdn') || href.includes('pixeldrain')) {
+                        initialLinks.push({ url: href, quality: currentQuality });
+                    }
+                }
+            }
+        } catch(e) { console.log(e); }
     }
     
     // Prevent timeouts by capping the number of links we fetch concurrently or sequentially
