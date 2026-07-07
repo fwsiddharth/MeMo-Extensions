@@ -415,6 +415,8 @@ module.exports = {
           id: `${imdbId}:${s.season_number}:${e.episode_number}`,
           number: e.episode_number,
           title: e.name || `Episode ${e.episode_number}`,
+          image: e.still_path ? `https://image.tmdb.org/t/p/w300${e.still_path}` : null,
+          overview: e.overview || "",
           season: s.season_number,
           imdbId
         }));
