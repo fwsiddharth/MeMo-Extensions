@@ -324,16 +324,22 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     // Prevent timeouts by capping the number of links we fetch concurrently or sequentially
     initialLinks = initialLinks.slice(0, 12);
     
+    // Execute all extractors concurrently to massively reduce scraping time and prevent timeouts
+    const extractionPromises = initialLinks.map(link => {
+        if (!link.url) return Promise.resolve([]);
+        return loadExtractor(link.url, link.quality);
+    });
+    
+    const extractedResults = await Promise.all(extractionPromises);
+    
     const streams = [];
-    for (const link of initialLinks) {
-        if(!link.url) continue;
-        const extracted = await loadExtractor(link.url, link.quality);
-        for(const ext of extracted) {
+    for (const extracted of extractedResults) {
+        for (const ext of extracted) {
             streams.push({
-                type: "mkv", // HDHub4u almost exclusively uploads MKVs
+                type: "mkv",
                 name: ext.source,
-                quality: ext.quality, // Quality string is now provided perfectly by hubCloudExtractor
-                language: "Dual Audio", // Usually dual audio on HDHub4u
+                quality: ext.quality,
+                language: "Dual Audio",
                 size: formatBytes(ext.size),
                 url: ext.url
             });
