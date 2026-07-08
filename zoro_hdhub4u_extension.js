@@ -280,9 +280,9 @@ async function loadExtractor(url) {
       if (finalUrl.includes("/u/")) finalUrl = finalUrl.replace("/u/", "/api/file/");
       return [{ url: finalUrl, quality: "1080p", source: 'Pixeldrain', size: 0 }];
     }
-    // hdstream4u.com/file/ links are direct download links
+    // hdstream4u.com/file/ links are streaming pages (need embed player, not direct download)
     if (url.includes('hdstream4u')) {
-      return [{ url, quality: "1080p", source: "Server 1 (Fastest)", size: 0 }];
+      return [{ url, quality: "1080p", source: "Server 1 (Fastest)", size: 0, isEmbed: true }];
     }
     return [];
   } catch (e) {
@@ -427,8 +427,13 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     );
     for (const extracted of results) {
       for (const ext of extracted) {
+        // Filter out garbage/spam URLs that aren't actual video sources
+        if (!ext.url) continue;
+        if (ext.url.includes('/category/') || ext.url.includes('hdhub4u.gratis')) continue;
+        if (ext.url.length < 20) continue;
+        
         streams.push({
-          type: "mkv",
+          type: ext.isEmbed ? "embed" : "mkv",
           name: ext.source,
           quality: ext.quality,
           language: "Dual Audio",
@@ -658,18 +663,33 @@ module.exports = {
       throw new Error("No streams found on HDHub4u. Try another server.");
     }
 
-    console.log(`[getStream] Returning ${servers.length} servers:`);
-    servers.forEach((s, i) => console.log(`  [${i}] ${s.quality} | ${s.name} | ${(s.url || '').substring(0, 70)}`));
+    // Separate direct-play streams from embed-only streams
+    const directStreams = servers.filter(s => s.type !== 'embed');
+    const embedStreams = servers.filter(s => s.type === 'embed');
 
+    console.log(`[getStream] Returning ${servers.length} servers (${directStreams.length} direct, ${embedStreams.length} embed):`);
+    servers.forEach((s, i) => console.log(`  [${i}] ${s.quality} | ${s.name} | ${s.type} | ${(s.url || '').substring(0, 70)}`));
+
+    // If we have direct streams, use those (native player)
+    if (directStreams.length > 0) {
+      return {
+        servers: directStreams,
+        type: "mp4",
+        url: directStreams[0].url,
+        subtitles: [],
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Referer": `${MAIN_URL}/`
+        }
+      };
+    }
+
+    // Only embed streams available — return as embed type for WebView player
     return {
-      servers: servers,
-      type: "mp4",
-      url: servers[0].url,
+      servers: embedStreams,
+      type: "embed",
+      url: embedStreams[0].url,
       subtitles: [],
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Referer": `${MAIN_URL}/`
-      }
     };
   }
 };
