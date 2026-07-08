@@ -161,6 +161,8 @@ async function hubCloudExtractor(url) {
     const links = [];
     const aMatches = pageData.match(/<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*btn[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
 
+    console.log(`[hubCloudExtractor] Found ${aMatches.length} btn links. pageTitle="${pageTitle.substring(0, 50)}" size=${size}`);
+
     for (const aTag of aMatches) {
       const hrefMatch = aTag.match(/href=["']([^"']+)["']/i);
       const href = hrefMatch ? hrefMatch[1] : null;
@@ -209,11 +211,12 @@ async function loadExtractor(url) {
   try {
     if (url.includes("?id=") || url.includes("techyboy4u") || url.includes("gadgetsweb")) {
       // gadgetsweb and techyboy4u redirect to hubcloud via encoded links
-      // First try following the redirect chain
       try {
         const res = await fetch(url, { headers: HEADERS });
         const finalUrl = res.url;
         const body = await res.text();
+        
+        console.log(`[loadExtractor] gadgetsweb/techyboy result: url=${(finalUrl || '').substring(0, 60)} bodyLen=${body.length}`);
         
         // If we got redirected to hubcloud/hblinks directly, use that
         if (finalUrl.includes('hubcloud') || finalUrl.includes('hblinks') || finalUrl.includes('hubdrive') || finalUrl.includes('hubcdn') || finalUrl.includes('hubstream')) {
@@ -223,6 +226,7 @@ async function loadExtractor(url) {
         // If the response body contains hubcloud links, extract them
         const hubMatch = body.match(/href=["'](https?:\/\/[^"']*(?:hubcloud|hubdrive|hblinks|hubcdn|hubstream)[^"']*)["']/i);
         if (hubMatch) {
+          console.log(`[loadExtractor] Found hub link in body: ${hubMatch[1].substring(0, 60)}`);
           return await hubCloudExtractor(hubMatch[1]);
         }
         
@@ -238,17 +242,30 @@ async function loadExtractor(url) {
           const jsonObject = JSON.parse(decodedString);
           if (jsonObject.o) {
             const decodedUrl = atob(jsonObject.o).trim();
+            console.log(`[loadExtractor] Decoded URL: ${decodedUrl.substring(0, 60)}`);
             if (decodedUrl.includes('hubcloud') || decodedUrl.includes('hblinks') || decodedUrl.includes('hubdrive') || decodedUrl.includes('hubstream')) {
               return await hubCloudExtractor(decodedUrl);
             }
             return [{ url: decodedUrl, quality: "1080p", source: "Server 1 (Fastest)", size: 0 }];
           }
         }
-      } catch (e) {}
+        
+        // Check if body itself contains a direct video URL
+        const videoUrlMatch = body.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|mkv|m3u8)[^"'\s<>]*/i);
+        if (videoUrlMatch) {
+          console.log(`[loadExtractor] Found direct video URL in body: ${videoUrlMatch[0].substring(0, 60)}`);
+          return [{ url: videoUrlMatch[0], quality: "1080p", source: "Server 1 (Fastest)", size: 0 }];
+        }
+        
+        console.log(`[loadExtractor] gadgetsweb: No usable links found. Body preview: ${body.substring(0, 100)}`);
+      } catch (e) {
+        console.log(`[loadExtractor] gadgetsweb error: ${e.message}`);
+      }
       
       // Fallback: try original getRedirectLinks approach
       const redirected = await getRedirectLinks(url);
       if (redirected !== url) {
+        console.log(`[loadExtractor] getRedirectLinks result: ${redirected.substring(0, 60)}`);
         if (redirected.includes('hubcloud') || redirected.includes('hblinks') || redirected.includes('hubdrive') || redirected.includes('hubcdn') || redirected.includes('hubstream')) {
           return await hubCloudExtractor(redirected);
         }
@@ -268,7 +285,10 @@ async function loadExtractor(url) {
       return [{ url, quality: "1080p", source: "Server 1 (Fastest)", size: 0 }];
     }
     return [];
-  } catch (e) { return []; }
+  } catch (e) {
+    console.log(`[loadExtractor] Fatal error: ${e.message}`);
+    return [];
+  }
 }
 
 // ─── HDHub4u Search & Stream Extraction ───────────────────
@@ -637,6 +657,9 @@ module.exports = {
     if (!servers || servers.length === 0) {
       throw new Error("No streams found on HDHub4u. Try another server.");
     }
+
+    console.log(`[getStream] Returning ${servers.length} servers:`);
+    servers.forEach((s, i) => console.log(`  [${i}] ${s.quality} | ${s.name} | ${(s.url || '').substring(0, 70)}`));
 
     return {
       servers: servers,
