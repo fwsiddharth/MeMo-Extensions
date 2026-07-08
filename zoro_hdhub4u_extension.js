@@ -351,11 +351,13 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
   const html = await res.text();
 
   let targetHtml = html;
+  let isPackDownload = false;
+  
   if (mediaType === "tv" && eNum) {
     // Try to isolate the specific episode section
-    // Common patterns: "Episode 5", "Ep 05", "EP-5", "E05", ">EP 5<"
-    const epRegex = new RegExp(`(?:>\\s*(?:Episode|Ep|EP)[\\s\\-\\.]*0?${eNum}\\b)`, 'i');
-    const nextEpRegex = new RegExp(`(?:>\\s*(?:Episode|Ep|EP)[\\s\\-\\.]*0?${eNum + 1}\\b)`, 'i');
+    // Common patterns: "Episode 5", "Ep 05", "EP-5", "E05", ">EP 5<", ">EPiSODE 5<"
+    const epRegex = new RegExp(`>\\s*(?:Episode|Ep|EP|EPiSODE)[\\s\\-\\.]*0?${eNum}(?:\\b|[^\\d])`, 'i');
+    const nextEpRegex = new RegExp(`>\\s*(?:Episode|Ep|EP|EPiSODE)[\\s\\-\\.]*0?${eNum + 1}(?:\\b|[^\\d])`, 'i');
 
     let startIdx = html.search(epRegex);
     if (startIdx !== -1) {
@@ -366,8 +368,11 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
       } else {
         targetHtml = html.substring(startIdx);
       }
+    } else {
+      // No episode markers found — this is likely a PACK download page
+      // Just use the full page links (they'll all be for the same quality pack)
+      isPackDownload = true;
     }
-    // If no episode marker found, use the full page (pack download)
   }
 
   // Extract download links
@@ -387,8 +392,10 @@ async function getHDHubStreams(tmdbId, mediaType, mediaInfo, sNum, eNum) {
     }
   }
 
-  // Cap to prevent timeout (process max 10 links)
-  initialLinks = initialLinks.slice(0, 10);
+  // Cap to prevent timeout
+  // Pack downloads have duplicate links for same content — limit more aggressively
+  const maxLinks = isPackDownload ? 6 : 10;
+  initialLinks = initialLinks.slice(0, maxLinks);
 
   // Extract streams in parallel batches of 3
   const streams = [];
