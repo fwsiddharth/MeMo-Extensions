@@ -46,7 +46,7 @@ function mapTmdbToAnime(item) {
 
 // ─── HDHub4u Scraper Core ─────────────────────────────────
 
-let MAIN_URL = "https://new2.hdhub4u.cl";
+let MAIN_URL = "https://new3.hdhub4u.cl";
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
